@@ -392,6 +392,14 @@ class SaltSwap(object):
         pot_energy_new = state.getPotentialEnergy()
 
         log_accept = (pot_energy_old - pot_energy_new - self.delta_chem)/kT
+
+        # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
+        (nwats,ncation,nanion) = self.getIdentityCounts()
+        if mode_forward == 'add salt' :
+            log_accept += np.log(1.0*nwats*(nwats-1)/(nanion+1)/(nanion+1))
+        else :
+            log_accept += np.log(1.0*ncation*nanion/(nwats+1)/(nwats+2))
+
         # Accept or reject:
         if (log_accept > 0.0) or (random.random() < math.exp(log_accept)):
             # Accept :D
