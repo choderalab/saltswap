@@ -35,6 +35,7 @@ Coming soon to an interpreter near you!
 TODO
 ----
     * Increase accepance rates by either using configuration biasing, or NCMC switching moves. The latter is preferred.
+    * Check that acceptance test is correct; is proposal for exchanges accounted for?
 
 Copyright and license
 ---------------------
@@ -43,18 +44,13 @@ Copyright and license
 
 """
 from __future__ import print_function
-import re
 import sys
 import math
 import random
-#import copy
-import time
 import numpy as np
-#from scipy.misc import logsumexp
-import simtk
-import simtk.openmm as openmm
+#import simtk
+#import simtk.openmm as openmm
 import simtk.unit as units
-#import pymbar
 #from openmmtools.integrators import VelocityVerletIntegrator
 
 # MODULE CONSTANTS
@@ -85,7 +81,7 @@ def strip_in_unit_system(quant, unit_system=units.md_unit_system, compatible_wit
         return quant
 
 
-class ConstantSalt(object):
+class SaltSwap(object):
     """
     Monte Carlo driver for semi-grand canonical ensemble moves.
 
@@ -296,32 +292,6 @@ class ConstantSalt(object):
 
         if self.debug: print('identifyResidues: %d %s molecules identified.' % (len(target_residues),residue_names[0]))
         return target_residues
-
-    def getResidueIdentities(self,topology):
-        '''
-        Describe the identities of water, cations, and anions with a 3 by N matrix of ones and zeros.
-        Parameters
-        ----------
-        topology : simtk.openmm.app.topology
-            The topology from which water and ion residues are to be identified.
-        Returns
-        -------
-        stateMatrix : numpy array
-            The identity of residues described by a matrix of ones and zeros. One row for each exchnageable species.
-        '''
-
-        stateMatrix = np.zeros((3,topology.residues.im_self.getNumResidues()))
-
-        # The first row indicates which residues are water molecules
-        water_indices = [res.index for res in self.water_residues]
-        stateMatrix[0,water_indices] = 1
-        # The second row indicates cations
-        cation_indices = [res.index for res in self.cation_residues]
-        stateMatrix[1,cation_indices] = 1
-        # The third row indicates anions
-        anion_indices = [res.index for res in self.anion_residues]
-        stateMatrix[2,anion_indices] = 1
-        return stateMatrix
 
     def initializeStateVector(self):
         '''

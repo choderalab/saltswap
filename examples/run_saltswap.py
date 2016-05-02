@@ -4,7 +4,9 @@
 from datetime import datetime
 from simtk import openmm, unit
 from simtk.openmm import app
-import constsalt
+import sys
+sys.path.append("../saltswap/")
+import saltswap
 
 if __name__ == "__main__":
     import argparse
@@ -47,7 +49,7 @@ nsteps = args.steps               # Amount of MD steps per iteration. 250000 ste
 nattempts = args.attempts         # Number of identity exchanges for water and ions.
 
 print "Initializing constant salt class"
-mc_constant_salt = constsalt.ConstantSalt(system=system,topology=pdb.topology,temperature=temperature,delta_chem=delta_chem,integrator=integrator,pressure=pressure,nattempts_per_update=nattempts, debug=False)
+mc_constant_salt = saltswap.SaltSwap(system=system,topology=pdb.topology,temperature=temperature,delta_chem=delta_chem,integrator=integrator,pressure=pressure,nattempts_per_update=nattempts, debug=False)
 
 print "Minimizing energy..."
 simulation.minimizeEnergy(maxIterations=25)
@@ -84,5 +86,5 @@ tm = datetime.now() - startTime
 
 s = "\nFraction of moves accepted = {:4}\n".format(mc_constant_salt.getAcceptanceProbability())
 f.write(s)
-s = "Elapsed time in seconds = {:100}".format(tm.seconds)
+s = "Elapsed time in seconds = {:7}\n".format(tm.seconds)
 f.write(s)

@@ -6,14 +6,12 @@ Code to fluctuate the number of anion-cation (salt) pairs in an explicit water s
 `saltswap/`
 
 ```
-
     saltswap.py		- Python module for implementing salt-water exchanges in explicit water simulations
 ```
 
 `examples/`
 
 ```
-
     run_saltswap.py	- Command line tool for running salt-swap simulations given an input PDB
     waterbox.pdb	- PDB file of a box of tip3p water
 ```
@@ -21,7 +19,6 @@ Code to fluctuate the number of anion-cation (salt) pairs in an explicit water s
 `roughcode/`
 
 ```
-
     Directory were new code is tested
 ```
 
