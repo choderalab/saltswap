@@ -48,10 +48,9 @@ import sys
 import math
 import random
 import numpy as np
-#import simtk
-#import simtk.openmm as openmm
+import simtk.openmm as openmm
 import simtk.unit as units
-#from openmmtools.integrators import VelocityVerletIntegrator
+from openmmtools.integrators import VelocityVerletIntegrator
 
 # MODULE CONSTANTS
 kB = units.BOLTZMANN_CONSTANT_kB * units.AVOGADRO_CONSTANT_NA
@@ -352,7 +351,7 @@ class SaltSwap(object):
 
         # Perform perturbation to remove or add salt with NCMC and calculate energies
         logP_initial, pot1, kin1 = self._compute_log_probability(context)
-        NCMC(self.nkernals,self.nverlet_steps,mode_forward,change_indices)
+        self.NCMC(context,self.nkernals,self.nverlet_steps,mode_forward,change_indices)
         logP_final, pot2, kin2 = self._compute_log_probability(context)
         log_accept = logP_final - logP_initial + self.delta_chem/self.kT
 
@@ -405,6 +404,7 @@ class SaltSwap(object):
             self.updateForces_fractional(mode,exchange_indices,fraction)
             self.forces_to_update.updateParametersInContext(context)
             self.verlet_integrator.step(nsteps)
+        self.compound_integrator.setCurrentIntegrator(0)
 
     def setIdentity(self,mode,exchange_indices):
         '''
@@ -573,8 +573,6 @@ class SaltSwap(object):
         if self.pressure is not None:
             # Add pressure contribution for periodic simulations.
             volume = context.getState().getPeriodicBoxVolume()
-            if self.debug:
-                print('kT = %s, pressure = %s, volume = %s, multiple = %s' % (str(self.kT), str(self.pressure), str(volume), str(-self.pressure*volume*units.AVOGADRO_CONSTANT_NA/self.kT)))
             log_P += -self.pressure * volume * units.AVOGADRO_CONSTANT_NA/self.kT
 
         # Return the log probability.

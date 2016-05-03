@@ -32,10 +32,10 @@ pressure = 1*unit.atmospheres
 temperature = 300*unit.kelvin
 delta_chem = args.deltachem*unit.kilojoule_per_mole
 
-#Loading a premade water box:
-pdb = app.PDBFile('waterbox.pdb')
-forcefield = app.ForceField('tip3p.xml')
-system = forcefield.createSystem(pdb.topology,nonbondedMethod=app.PME, nonbondedCutoff=1.0*unit.nanometer, constraints=app.HBonds)
+    #Loading a premade water box:
+    pdb = app.PDBFile('waterbox.pdb')
+    forcefield = app.ForceField('tip3p.xml')
+    system = forcefield.createSystem(pdb.topology,nonbondedMethod=app.PME, nonbondedCutoff=1.0*unit.nanometer, constraints=app.HBonds)
 
 print "Minimizing energy..."
 integrator = openmm.VerletIntegrator(1.0 * unit.femtoseconds)
@@ -52,7 +52,6 @@ print "Initializing constant salt class"
 mc_saltswap = saltswap.SaltSwap(system=system,topology=pdb.topology,temperature=temperature,delta_chem=delta_chem,integrator=integrator,pressure=pressure,debug=False,nkernals=args.nkernals, nverlet_steps=args.nverlet)
 
 print "Initializing context"
-context = openmm.Context(system, mc_saltswap.compound_integrator, platform)
 if args.gpu==False :
     platform = Platform.getPlatformByName('CPU')
     context = openmm.Context(system, mc_saltswap.compound_integrator,platform)
