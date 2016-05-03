@@ -414,6 +414,14 @@ class SaltSwap(object):
             self.forces_to_update.updateParametersInContext(context)
             if self.debug==True: print(mode_forward,"rejected")
 
+    def NCMC(self,context,nkernals,nsteps,mode,exchange_indices,):
+
+        for k in range(nkernals):
+            fraction = float(k + 1)/float(nkernals)
+            self.updateForces_fractional(mode,exchange_indices,fraction)
+            self.forces_to_update.updateParametersInContext(context)
+            self.verlet_integrator.step(nsteps)
+
     def setIdentity(self,mode,exchange_indices):
         '''
         Function to set the names of the mutated residues and update the state vector. Called after a transformation
@@ -437,6 +445,69 @@ class SaltSwap(object):
             self.mutable_residues[exchange_indices[0]].name = self.waterName
             self.mutable_residues[exchange_indices[1]].name = self.waterName
             self.stateVector[exchange_indices] = 0
+
+    def updateForces_fractional(self,mode,exchange_indices,fraction=1.0):
+        '''
+        Update the forcefield parameters accoring depending on whether inserting salt or water.
+
+        Parameters
+        ----------
+        mode : string
+            Whether the supplied indices will be used to 'add salt' or 'remove salt'
+        exchange_indices : numpy array
+            Which water residues will be converted to cation and anion, or which cation and anion will be turned
+            into 2 water residue.
+        fraction : float
+            The fraction along the salt-water forcefield transformation pathway.
+        Returns
+        -------
+
+        '''
+        # TODO: Precalculate fractional forcefield parameters. Currently takes approx. 46 seconds per 100000 updates.
+
+        if mode == 'add salt':
+            initial_force = self.water_parameters
+            # First, adding the cation.
+            molecule = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
+            atm_index = 0
+            for atom in molecule:
+                target_force = self.cation_parameters[atm_index]
+                charge = (1-fraction)*initial_force[atm_index]["charge"] + fraction*target_force["charge"]
+                sigma = (1-fraction)*initial_force[atm_index]["sigma"] + fraction*target_force["sigma"]
+                epsilon = (1-fraction)*initial_force[atm_index]["epsilon"] + fraction*target_force["epsilon"]
+                self.forces_to_update.setParticleParameters(atom.index,charge=charge,sigma=sigma,epsilon=epsilon)
+                atm_index += 1
+            # Second, adding the anion.
+            molecule = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
+            atm_index = 0
+            for atom in molecule:
+                target_force = self.anion_parameters[atm_index]
+                charge = (1-fraction)*initial_force[atm_index]["charge"] + fraction*target_force["charge"]
+                sigma = (1-fraction)*initial_force[atm_index]["sigma"] + fraction*target_force["sigma"]
+                epsilon = (1-fraction)*initial_force[atm_index]["epsilon"] + fraction*target_force["epsilon"]
+                self.forces_to_update.setParticleParameters(atom.index,charge=charge,sigma=sigma,epsilon=epsilon)
+                atm_index += 1
+        if mode == 'remove salt':
+            molecule = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
+            initial_force = self.cation_parameters      # exchange_indices[0] is the cation residue.
+            atm_index = 0
+            for atom in molecule:
+                target_force = self.water_parameters[atm_index]
+                charge = (1-fraction)*initial_force[atm_index]["charge"] + fraction*target_force["charge"]
+                sigma = (1-fraction)*initial_force[atm_index]["sigma"] + fraction*target_force["sigma"]
+                epsilon = (1-fraction)*initial_force[atm_index]["epsilon"] + fraction*target_force["epsilon"]
+                self.forces_to_update.setParticleParameters(atom.index,charge=charge,sigma=sigma,epsilon=epsilon)
+                atm_index += 1
+            molecule = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
+            initial_force = self.anion_parameters       # exchange_indices[1] is the anion residue.
+            atm_index = 0
+            for atom in molecule:
+                target_force = self.water_parameters[atm_index]
+                charge = (1-fraction)*initial_force[atm_index]["charge"] + fraction*target_force["charge"]
+                sigma = (1-fraction)*initial_force[atm_index]["sigma"] + fraction*target_force["sigma"]
+                epsilon = (1-fraction)*initial_force[atm_index]["epsilon"] + fraction*target_force["epsilon"]
+                self.forces_to_update.setParticleParameters(atom.index,charge=charge,sigma=sigma,epsilon=epsilon)
+                atm_index += 1
 
     def updateForces(self,mode,exchange_indices):
         '''
