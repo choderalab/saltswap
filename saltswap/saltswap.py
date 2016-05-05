@@ -331,14 +331,29 @@ class SaltSwap(object):
         Code currently written specifically for exchanging two water molecules for Na and Cl, with generalisation to follow.
         Currently without NCMC, to be added.
         '''
+        self.nattempted += 1
 
         # If using NCMC, store initial positions.
+        #TODO: also save velococities?
         if self.nverlet_steps > 0:
             initial_positions = context.getState(getPositions=True).getPositions(asNumpy=True)
 
-        self.nattempted += 1
+        # Initializing the exponent of the acceptance test. Adding to it as we go along.
+        log_accept = 0.0
         # Whether to delete or add salt by selecting random water molecules to turn into a cation and an anion or vice versa.
-        if (sum(self.stateVector==1)==0) or (sum(self.stateVector==1) < sum(self.stateVector==0)*0.5) and (np.random.random() < 0.5):
+        if (sum(self.stateVector==1) == 0):
+            change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0],size=2,replace=False)
+            mode_forward = "add salt"
+            mode_backward ="remove salt"
+            log_accept -= np.log(2)         # Due to asymmetric proposal probabilities
+        elif (sum(self.stateVector==0) < 2):
+            mode_forward = "remove salt"
+            mode_backward = "add salt"
+            cation_index = np.random.choice(a=np.where(self.stateVector==1)[0],size=1)
+            anion_index = np.random.choice(a=np.where(self.stateVector==2)[0],size=1)
+            change_indices = np.array([cation_index,anion_index])
+            log_accept -= np.log(2)         # Due to asymmetric proposal probabilities
+        elif (np.random.random() < 0.5):
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0],size=2,replace=False)
             mode_forward = "add salt"
             mode_backward ="remove salt"
@@ -362,6 +377,8 @@ class SaltSwap(object):
         else :
             log_accept += np.log(1.0*ncation*nanion/(nwats+1)/(nwats+2))
 
+
+
         # Accept or reject:
         if (log_accept > 0.0) or (random.random() < math.exp(log_accept)) :
             # Accept :D
@@ -375,6 +392,7 @@ class SaltSwap(object):
             # Revert parameters to their previous value
             self.updateForces_fractional(mode_backward,change_indices,fraction=1.0)
             self.forces_to_update.updateParametersInContext(context)
+            #TODO: also revert velococities
             if self.nverlet_steps > 0:
                 context.setPositions(initial_positions)
             if self.debug==True: print(mode_forward,"rejected")
