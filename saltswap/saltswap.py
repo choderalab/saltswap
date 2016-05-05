@@ -370,8 +370,22 @@ class SaltSwap(object):
         if self.debug: print("old potential energy =", pot_energy_old)
 
         # Whether to delete or add salt by selecting random water molecules to turn into a cation and an anion or vice versa.
-        # Here could add the option to create multiple pairs of waters options for configurational biasing
-        if (sum(self.stateVector==1)==0) or (sum(self.stateVector==1) < sum(self.stateVector==0)*0.5) and (np.random.random() < 0.5):
+       # Initializing the exponent of the acceptance test. Adding to it as we go along.
+        log_accept = 0.0
+        # Whether to delete or add salt by selecting random water molecules to turn into a cation and an anion or vice versa.
+        if (sum(self.stateVector==1) == 0):
+            change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0],size=2,replace=False)
+            mode_forward = "add salt"
+            mode_backward ="remove salt"
+            log_accept -= np.log(2)         # Due to asymmetric proposal probabilities
+        elif (sum(self.stateVector==0) < 2):
+            mode_forward = "remove salt"
+            mode_backward = "add salt"
+            cation_index = np.random.choice(a=np.where(self.stateVector==1)[0],size=1)
+            anion_index = np.random.choice(a=np.where(self.stateVector==2)[0],size=1)
+            change_indices = np.array([cation_index,anion_index])
+            log_accept -= np.log(2)         # Due to asymmetric proposal probabilities
+        elif (np.random.random() < 0.5):
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0],size=2,replace=False)
             mode_forward = "add salt"
             mode_backward ="remove salt"
@@ -391,7 +405,7 @@ class SaltSwap(object):
         state = context.getState(getEnergy=True)
         pot_energy_new = state.getPotentialEnergy()
 
-        log_accept = (pot_energy_old - pot_energy_new - self.delta_chem)/kT
+        log_accept += (pot_energy_old - pot_energy_new - self.delta_chem)/kT
 
         # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
         (nwats,ncation,nanion) = self.getIdentityCounts()
