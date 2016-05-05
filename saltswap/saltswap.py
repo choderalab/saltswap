@@ -368,7 +368,7 @@ class SaltSwap(object):
         logP_initial, pot1, kin1 = self._compute_log_probability(context)
         self.NCMC(context,self.nkernals,self.nverlet_steps,mode_forward,change_indices)
         logP_final, pot2, kin2 = self._compute_log_probability(context)
-        log_accept = logP_final - logP_initial + self.delta_chem/self.kT
+        log_accept += logP_final - logP_initial + self.delta_chem/self.kT
 
         # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
         (nwats,ncation,nanion) = self.getIdentityCounts()
