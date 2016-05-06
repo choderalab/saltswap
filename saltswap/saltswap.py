@@ -120,8 +120,8 @@ class SaltSwap(object):
         # Create a Verlet integrator to handle NCMC integration
         self.compound_integrator = openmm.CompoundIntegrator()
         self.compound_integrator.addIntegrator(integrator)
-        self.verlet_integrator = VelocityVerletIntegrator(ncmc_timestep)
-        self.compound_integrator.addIntegrator(self.verlet_integrator)
+        self.vv_integrator = VelocityVerletIntegrator(ncmc_timestep)
+        self.compound_integrator.addIntegrator(self.vv_integrator)
         self.compound_integrator.setCurrentIntegrator(0)  # make user integrator active
         self.nkernals  = nkernals
         self.nverlet_steps = nverlet_steps
@@ -421,7 +421,7 @@ class SaltSwap(object):
             fraction = float(k + 1)/float(nkernals)
             self.updateForces_fractional(mode,exchange_indices,fraction)
             self.forces_to_update.updateParametersInContext(context)
-            self.verlet_integrator.step(nsteps)
+            self.vv_integrator.step(nsteps)
         self.compound_integrator.setCurrentIntegrator(0)
 
     def setIdentity(self,mode,exchange_indices):
