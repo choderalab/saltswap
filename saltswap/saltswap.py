@@ -380,7 +380,7 @@ class SaltSwap(object):
 
         # Perform perturbation to remove or add salt with NCMC and calculate energies
         if self.nkernals > 1 or (self.debug==False and self.nkernals==1):
-            try
+            try:
                 self.NCMC(context,self.nkernals,self.nverlet_steps,mode_forward,change_indices)
                 logP_final, pot2, kin2 = self._compute_log_probability(context)
             except Exception:

@@ -110,5 +110,6 @@ for i in range(iterations):
     app.PDBFile.writeModel(pdb.topology, positions, file=pdbfile, modelIndex=i+1)
 tm = datetime.now() - startTime
 
-s = "\nElapsed time in seconds = {:7}\n".format(tm.seconds)
+s = "\nElapsed time in seconds = {:7}".format(tm.seconds)
+s = "\nNumber of NaNs = {:3}\n".format(mc_saltswap.nan)
 f.write(s)
