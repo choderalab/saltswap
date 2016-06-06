@@ -5,8 +5,9 @@ from datetime import datetime
 from simtk import openmm, unit
 from simtk.openmm import app
 import sys
-#sys.path.append("../saltswap/")
+sys.path.append("../saltswap/")
 import saltswap
+import gc
 
 if __name__ == "__main__":
     import argparse
@@ -38,14 +39,11 @@ forcefield = app.ForceField('tip3p.xml')
 system = forcefield.createSystem(pdb.topology,nonbondedMethod=app.PME, nonbondedCutoff=1.0*unit.nanometer, constraints=app.HBonds)
 
 s = "Minimizing energy..."
-#err.write(s)
 print s
 integrator = openmm.VerletIntegrator(1.0 * unit.femtoseconds)
 context = openmm.Context(system, integrator)
 context.setPositions(pdb.positions)
 openmm.LocalEnergyMinimizer.minimize(context, 1.0, 25)
-#s =  "   Ending minimization."
-#err.write(s)
 positions = context.getState(getPositions=True).getPositions(asNumpy=True)
 del context, integrator
 
@@ -53,12 +51,10 @@ integrator = openmm.LangevinIntegrator(temperature, 1/unit.picosecond, 0.002*uni
 system.addForce(openmm.MonteCarloBarostat(pressure, temperature, 25))
 
 s = "Initializing constant salt class"
-#err.write(s)
 print s
 mc_saltswap = saltswap.SaltSwap(system=system,topology=pdb.topology,temperature=temperature,delta_chem=delta_chem,integrator=integrator,pressure=pressure,debug=False,nkernals=args.nkernals, nverlet_steps=args.nverlet)
 
 s = "Initializing context"
-#err.write(s)
 print s
 if args.gpu==False :
     platform = openmm.Platform.getPlatformByName('CPU')
@@ -74,20 +70,19 @@ nsteps = args.steps               # Amount of MD steps per iteration. 250000 ste
 nattempts = args.attempts         # Number of identity exchanges for water and ions.
 
 s = "Quick equilibration..."
-#err.write(s)
 print s
 context.setVelocitiesToTemperature(temperature)
 integrator.step(args.equilibration)
-#s = " Ending equilibration."
-#err.write(s)
+
 positions = context.getState(getPositions=True,enforcePeriodicBox=True).getPositions(asNumpy=True)
 
 # Opening file to store simulation data
 f = open(args.data, 'w')
 s = "Niterations = {:4}, Nsteps = {:7}, Nattemps = {:3}, Dchem = {:5}, Nkernals = {:5}, Nverlet = {:3}\n".format(args.cycles,args.steps,args.attempts,args.deltachem,args.nkernals,args.nverlet)
 f.write(s)
-s = "\n{:4} {:5} {:5} {:4} \n".format("Step","Nwats","Nsalt","AccProb")
+s = "\n{:4} {:5} {:5} {:4} {:6}\n".format("Step","Nwats","Nsalt","AccProb","Time (s)")
 f.write(s)
+f.close()
 # Open PDB file for writing.
 pdbfile = open(args.out, 'w')
 app.PDBFile.writeHeader(pdb.topology, file=pdbfile)
@@ -96,20 +91,26 @@ app.PDBFile.writeModel(pdb.topology, positions, file=pdbfile, modelIndex=0)
 print "Running simulation..."
 startTime = datetime.now()
 for i in range(iterations):
+    iter_start = datetime.now()
     integrator.step(nsteps)
     mc_saltswap.update(context,nattempts=nattempts)
+    iter_time = datetime.now() - iter_start
     # Custom reporters: (simulations.reporters severely slows the simulations down)
     cnts = mc_saltswap.getIdentityCounts()
     nrg = mc_saltswap.getPotEnergy(context)
     dims = pdb.topology.getUnitCellDimensions()
     acc = mc_saltswap.getAcceptanceProbability()
-    s = "{:4} {:5} {:5}   {:0.2f}\n".format(i,cnts[0],cnts[1],round(acc,2))
+    f = open(args.data, 'a')
+    s = "{:4} {:5} {:5}   {:0.2f} {:4}\n".format(i,cnts[0],cnts[1],round(acc,2),iter_time.seconds)
     f.write(s)
+    f.close()
     mc_saltswap.resetStatistics()
     positions = context.getState(getPositions=True,enforcePeriodicBox=True).getPositions(asNumpy=True)
     app.PDBFile.writeModel(pdb.topology, positions, file=pdbfile, modelIndex=i+1)
+    gc.collect()
 tm = datetime.now() - startTime
 
 s = "\nElapsed time in seconds = {:7}".format(tm.seconds)
+f.write(s)
 s = "\nNumber of NaNs = {:3}\n".format(mc_saltswap.nan)
 f.write(s)

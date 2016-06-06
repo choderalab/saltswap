@@ -321,7 +321,7 @@ class SaltSwap(object):
         state = context.getState(getEnergy=True)
         return state.getPotentialEnergy()
 
-    def attempt_identity_swap(self,context):
+    def attempt_identity_swap(self,context,penalty):
         '''
         Attempt the exchange of (possibly multiple) chemical species.
 
@@ -353,7 +353,7 @@ class SaltSwap(object):
             mode_forward = "add salt"
             mode_backward ="remove salt"
             log_accept -= np.log(2)                     # Due to asymmetric proposal probabilities
-            cost = self.delta_chem/self.kT              # The free energy to remove salt and add 2 waters to bulk water
+            cost = penalty              # The free energy to remove salt and add 2 waters to bulk water
         elif (sum(self.stateVector==0) < 2):
             mode_forward = "remove salt"
             mode_backward = "add salt"
@@ -361,19 +361,19 @@ class SaltSwap(object):
             anion_index = np.random.choice(a=np.where(self.stateVector==2)[0],size=1)
             change_indices = np.array([cation_index,anion_index])
             log_accept -= np.log(2)                     # Due to asymmetric proposal probabilities
-            cost = -self.delta_chem/self.kT             # The free energy to remove 2 waters and add salt to bulk water
+            cost = -penalty             # The free energy to remove 2 waters and add salt to bulk water
         elif (np.random.random() < 0.5):
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0],size=2,replace=False)
             mode_forward = "add salt"
             mode_backward ="remove salt"
-            cost = self.delta_chem/self.kT              # The free energy to remove salt and add 2 waters to bulk water
+            cost = penalty              # The free energy to remove salt and add 2 waters to bulk water
         else:
             mode_forward = "remove salt"
             mode_backward = "add salt"
             cation_index = np.random.choice(a=np.where(self.stateVector==1)[0],size=1)
             anion_index = np.random.choice(a=np.where(self.stateVector==2)[0],size=1)
             change_indices = np.array([cation_index,anion_index])
-            cost = -self.delta_chem/self.kT             # The free energy to remove 2 waters and add salt to bulk water
+            cost = -penalty             # The free energy to remove 2 waters and add salt to bulk water
 
         # Compute initial energy
         logP_initial, pot1, kin1 = self._compute_log_probability(context)
@@ -381,7 +381,7 @@ class SaltSwap(object):
         # Perform perturbation to remove or add salt with NCMC and calculate energies
         if self.nkernals > 1 or (self.debug==False and self.nkernals==1):
             try:
-                self.NCMC(context,self.nkernals,self.nverlet_steps,mode_forward,change_indices)
+                self.NCMC(context,self.nkernals,self.nverlet_steps,mode_forward,change_indices,self.debug)
                 logP_final, pot2, kin2 = self._compute_log_probability(context)
             except Exception:
                 logP_final = logP_initial - 999999999999.0   # If simulation blows up, making the new logP unfavourable.
@@ -426,7 +426,7 @@ class SaltSwap(object):
                 context.setPositions(initial_positions)
                 context.setVelocities(initial_velocities)
 
-    def NCMC(self,context,nkernals,nsteps,mode,exchange_indices):
+    def NCMC(self,context,nkernals,nsteps,mode,exchange_indices,debug=False):
         '''
         Performs nonequilibrium candidate Monte Carlo for the addition or removal of salt.
 
@@ -446,12 +446,18 @@ class SaltSwap(object):
         -------
 
         '''
+        if debug == True: print("Starting NCMC...")
         for k in range(nkernals):
             fraction = float(k + 1)/float(nkernals)
+            #if debug == True: print("  About to update forces")
             self.updateForces_fractional(mode,exchange_indices,fraction)
+            #if debug == True: print("  About to update context")
             self.forces_to_update.updateParametersInContext(context)
+            #if debug == True: print("  About to use VV")
             self.vv_integrator.step(nsteps)
+            if debug == True: print("  Propigator {0} complete".format(k))
         self.compound_integrator.setCurrentIntegrator(0)
+        if debug == True: print("...NCMC complete")
 
     def setIdentity(self,mode,exchange_indices):
         '''
@@ -585,7 +591,7 @@ class SaltSwap(object):
         # Return the log probability.
         return log_P, pot_energy, kin_energy
 
-    def update(self, context,nattempts=None):
+    def update(self, context,nattempts=None,cost=None):
         """
         Perform a number of Monte Carlo update trials for the titration state.
 
@@ -602,9 +608,10 @@ class SaltSwap(object):
 
         """
         if nattempts == None: nattempts = self.nattempts_per_update
+        if cost == None: cost = self.delta_chem/self.kT
         # Perform a number of protonation state update trials.
         for attempt in range(nattempts):
-            self.attempt_identity_swap(context)
+            self.attempt_identity_swap(context,penalty=cost)
         return
 
     def getAcceptanceProbability(self):
