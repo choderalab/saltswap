@@ -89,7 +89,7 @@ for i in range(iterations):
     nrg = mc_saltswap.getPotEnergy(simulation.context)
     dims = pdb.topology.getUnitCellDimensions()
     vol = dims[0]*dims[1]*dims[2]
-    s = s = "{:4} {:5} {:5} {:5} {:20} {:20}\n".format(i,cnts[0],cnts[1],cnts[2],nrg,vol)
+    s = "{:4} {:5} {:5} {:5} {:20} {:20}\n".format(i,cnts[0],cnts[1],cnts[2],nrg,vol)
     f.write(s)
     positions = context.getState(getPositions=True,enforcePeriodicBox=True).getPositions(asNumpy=True)
     app.PDBFile.writeModel(pdb.topology, positions, file=pdbfile, modelIndex=i+1)
