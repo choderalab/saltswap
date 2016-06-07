@@ -48,38 +48,13 @@ import sys
 import math
 import random
 import numpy as np
-#import simtk
-#import simtk.openmm as openmm
+import simtk.openmm as openmm
 import simtk.unit as units
-#from openmmtools.integrators import VelocityVerletIntegrator
+from openmmtools.integrators import VelocityVerletIntegrator
 
 # MODULE CONSTANTS
 kB = units.BOLTZMANN_CONSTANT_kB * units.AVOGADRO_CONSTANT_NA
 kB = kB.in_units_of(units.kilojoule_per_mole / units.kelvin)
-
-def strip_in_unit_system(quant, unit_system=units.md_unit_system, compatible_with=None):
-    """Strips the unit from a simtk.units.Quantity object and returns it's value conforming to a unit system
-
-    Parameters
-    ----------
-    quant : simtk.unit.Quantity
-        object from which units are to be stripped
-    unit_system : simtk.unit.UnitSystem:
-        unit system to which the unit needs to be converted, default is the OpenMM unit system (md_unit_system)
-    compatible_with : simtk.unit.Unit
-        Supply to make sure that the unit is compatible with an expected unit
-
-    Returns
-    -------
-    quant : object with no units attached
-    """
-    if units.is_quantity(quant):
-        if compatible_with is not None:
-            quant = quant.in_units_of(compatible_with)
-        return quant.value_in_unit_system(unit_system)
-    else:
-        return quant
-
 
 class SaltSwap(object):
     """
@@ -90,7 +65,7 @@ class SaltSwap(object):
     """
 
     def __init__(self, system, topology,temperature, delta_chem, integrator, pressure=None, nattempts_per_update=50, debug=False,
-        nsteps_per_trial=0, ncmc_timestep=1.0*units.femtoseconds, waterName="HOH", cationName='Na+', anionName='Cl-'):
+        nkernals=1, nverlet_steps=0, ncmc_timestep=1.0*units.femtoseconds, waterName="HOH", cationName='Na+', anionName='Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
 
@@ -105,17 +80,19 @@ class SaltSwap(object):
         chemical_names : list of strings
             Names of each of the residues whose parameters will be exchanged.
         integrator : simtk.openmm.integrator
-            The integrator used for dynamics
+            The integrator used for dynamics outside of SaltSwap
         pressure : simtk.unit.Quantity compatible with atmospheres, optional, default=None
             For explicit solvent simulations, the pressure.
         debug : bool, optional, default=False
             Turn debug information on/off.
-        nsteps_per_trial : int, optional, default=0
-            Number of steps per NCMC switching trial, or 0 if instantaneous Monte Carlo is to be used.
+        nkernals : integer, optional, default=0
+            Number of steps per NCMC switching trial, or 1 if instantaneous Monte Carlo is to be used.
+        nverlet_steps : integer
+            Number of velocity verlet steps to take in each NCMC iteration
         ncmc_timestep : simtk.unit.Quantity with units compatible with femtoseconds
             Timestep to use for NCMC switching
-        maintainChargeNeutrality : bool, optional, default=True
-            If True, waters will be converted to monovalent counterions and vice-versa.
+        waterName = str, optional, default='HOH'
+            Name of water residue that will be exchanged with salt
         cationName : str, optional, default='Na+'
             Name of cation residue from which parameters are to be taken.
         anionName : str, optional, default='Cl-'
@@ -131,6 +108,7 @@ class SaltSwap(object):
         self.system = system
         self.topology = topology
         self.temperature = temperature
+        self.kT = self.temperature*kB
         self.pressure = pressure
         self.delta_chem = delta_chem
         self.debug = debug
@@ -140,17 +118,18 @@ class SaltSwap(object):
         self.waterName = waterName
 
         # Create a Verlet integrator to handle NCMC integration
-        #self.compound_integrator = openmm.CompoundIntegrator()
-        #self.compound_integrator.addIntegrator(integrator)
-        #self.verlet_integrator = VelocityVerletIntegrator(ncmc_timestep)
-        #self.compound_integrator.addIntegrator(self.verlet_integrator)
-        #self.compound_integrator.setCurrentIntegrator(0)  # make user integrator active
+        self.compound_integrator = openmm.CompoundIntegrator()
+        self.compound_integrator.addIntegrator(integrator)
+        self.vv_integrator = VelocityVerletIntegrator(ncmc_timestep)
+        self.compound_integrator.addIntegrator(self.vv_integrator)
+        self.compound_integrator.setCurrentIntegrator(0)  # make user integrator active
+        self.nkernals  = nkernals
+        self.nverlet_steps = nverlet_steps
 
         # Set constraint tolerance.
         #self.verlet_integrator.setConstraintTolerance(integrator.getConstraintTolerance())
 
         # Store force object pointer.
-        # Unlike constph, only altering nonbonded force (like dual topology calculations).
         for force_index in range(system.getNumForces()):
             force = system.getForce(force_index)
             if force.__class__.__name__ == 'NonbondedForce':
@@ -165,7 +144,7 @@ class SaltSwap(object):
         self.mutable_residues = self.identifyResidues(self.topology,residue_names=(self.waterName,self.anionName,self.cationName))
 
         self.stateVector = self.initializeStateVector()
-        self.water_parameters = self.retrieveResidueParameters(self.topology,self.system,self.waterName)
+        self.water_parameters = self.retrieveResidueParameters(self.topology,self.waterName)
         self.cation_parameters = self.initializeIonParameters(ion_name=self.cationName,ion_params=None)
         self.anion_parameters = self.initializeIonParameters(ion_name=self.anionName,ion_params=None)
 
@@ -181,9 +160,15 @@ class SaltSwap(object):
         # Reset statistics.
         self.resetStatistics()
 
+        # For comparing NCMC and instance switching energies only:
+        self.nrg_ncmc = []
+        self.nrg_isnt = []
+
+        # For counting the number of NaNs I get in NCMC. These are automatically rejected.
+        self.nan = 0
         return
 
-    def retrieveResidueParameters(self, topology, system, resname):
+    def retrieveResidueParameters(self, topology, resname):
         """
         Retrieves the non-bonded parameters for a specified residue.
 
@@ -191,8 +176,6 @@ class SaltSwap(object):
         ----------
         topology : simtk.openmm.app.topology
             The topology from which water residues are to be identified.
-        system : simtk.openmm.System
-            The System object from which parameters are to be extracted.
         resname : str
             The residue name of the residue from which parameters are to be retrieved.
 
@@ -201,16 +184,8 @@ class SaltSwap(object):
         param_list : list of dict of str:float
             List of NonbondedForce parameter dict ('charge', 'sigma', 'epsilon') for each atom.
 
-        Warnings
-        --------
-        * Only `NonbondedForce` parameters are returned
-        * If the system contains more than one `NonbondedForce`, behavior is undefined
-
         """
-        # Find the NonbondedForce in the system
-        #forces = {system.getForce(index).__class__.__name__: system.getForce(index) for index in range(system.getNumForces())}
-        #nonbonded_force = forces['NonbondedForce']
-        # Return the first occurrence of NonbondedForce particle parameters matching `resname`
+
         param_list = []
         for residue in topology.residues():
             if residue.name == resname:
@@ -346,7 +321,7 @@ class SaltSwap(object):
         state = context.getState(getEnergy=True)
         return state.getPotentialEnergy()
 
-    def attempt_identity_swap(self,context):
+    def attempt_identity_swap(self,context,penalty):
         '''
         Attempt the exchange of (possibly multiple) chemical species.
 
@@ -362,51 +337,72 @@ class SaltSwap(object):
         Code currently written specifically for exchanging two water molecules for Na and Cl, with generalisation to follow.
         Currently without NCMC, to be added.
         '''
-        kT=kB * self.temperature
         self.nattempted += 1
-        # Getting the current potential energy
-        #state = context.getState(getEnergy=True)
-        pot_energy_old = self.getPotEnergy(context)
-        if self.debug: print("old potential energy =", pot_energy_old)
 
-        # Whether to delete or add salt by selecting random water molecules to turn into a cation and an anion or vice versa.
-       # Initializing the exponent of the acceptance test. Adding to it as we go along.
+        # If using NCMC, store initial positions.
+        #TODO: also save velococities?
+        if self.nverlet_steps > 0:
+            initial_positions = context.getState(getPositions=True).getPositions(asNumpy=True)
+            initial_velocities = context.getState(getVelocities=True).getVelocities(asNumpy=True)
+
+        # Initializing the exponent of the acceptance test. Adding to it as we go along.
         log_accept = 0.0
         # Whether to delete or add salt by selecting random water molecules to turn into a cation and an anion or vice versa.
         if (sum(self.stateVector==1) == 0):
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0],size=2,replace=False)
             mode_forward = "add salt"
             mode_backward ="remove salt"
-            log_accept -= np.log(2)         # Due to asymmetric proposal probabilities
+            log_accept -= np.log(2)                     # Due to asymmetric proposal probabilities
+            cost = penalty              # The free energy to remove salt and add 2 waters to bulk water
         elif (sum(self.stateVector==0) < 2):
             mode_forward = "remove salt"
             mode_backward = "add salt"
             cation_index = np.random.choice(a=np.where(self.stateVector==1)[0],size=1)
             anion_index = np.random.choice(a=np.where(self.stateVector==2)[0],size=1)
             change_indices = np.array([cation_index,anion_index])
-            log_accept -= np.log(2)         # Due to asymmetric proposal probabilities
+            log_accept -= np.log(2)                     # Due to asymmetric proposal probabilities
+            cost = -penalty             # The free energy to remove 2 waters and add salt to bulk water
         elif (np.random.random() < 0.5):
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0],size=2,replace=False)
             mode_forward = "add salt"
             mode_backward ="remove salt"
+            cost = penalty              # The free energy to remove salt and add 2 waters to bulk water
         else:
             mode_forward = "remove salt"
             mode_backward = "add salt"
             cation_index = np.random.choice(a=np.where(self.stateVector==1)[0],size=1)
             anion_index = np.random.choice(a=np.where(self.stateVector==2)[0],size=1)
             change_indices = np.array([cation_index,anion_index])
+            cost = -penalty             # The free energy to remove 2 waters and add salt to bulk water
 
-        # TODO: option for NCMC. The section below should go into a separete function
-        # Update the names and forces of the selected mutable residues.
-        self.updateForces(mode_forward,change_indices)
-        # Get the new energy of the state
-        # .updateParameters may be very slow, as ALL of the parameters are updated.
-        self.forces_to_update.updateParametersInContext(context)
-        state = context.getState(getEnergy=True)
-        pot_energy_new = state.getPotentialEnergy()
+        # Compute initial energy
+        logP_initial, pot1, kin1 = self._compute_log_probability(context)
 
-        log_accept += (pot_energy_old - pot_energy_new - self.delta_chem)/kT
+        # Perform perturbation to remove or add salt with NCMC and calculate energies
+        if self.nkernals > 1 or (self.debug==False and self.nkernals==1):
+            try:
+                self.NCMC(context,self.nkernals,self.nverlet_steps,mode_forward,change_indices,self.debug)
+                logP_final, pot2, kin2 = self._compute_log_probability(context)
+            except Exception:
+                logP_final = logP_initial - 999999999999.0   # If simulation blows up, making the new logP unfavourable.
+                self.nan += 1
+        elif self.debug and self.nkernals==1:
+            self.NCMC(context,self.nkernals,self.nverlet_steps,mode_forward,change_indices)
+            logP_final, pot_ncmc, kin2 = self._compute_log_probability(context)
+            self.nrg_ncmc.append(pot_ncmc)
+            self.updateForces_fractional(mode_forward,change_indices,fraction=1.0)
+            self.forces_to_update.updateParametersInContext(context)
+            logP_final, pot_inst, kin2 = self._compute_log_probability(context)
+            self.nrg_isnt.append(pot_inst)
+        else:
+            self.updateForces_fractional(mode_forward,change_indices,fraction=1.0)
+            self.forces_to_update.updateParametersInContext(context)
+            logP_final, pot2, kin2 = self._compute_log_probability(context)
+        # Compute final energy
 
+        #logP_final, pot2, kin2 = self._compute_log_probability(context)
+        log_accept += logP_final - logP_initial + cost
+ 
         # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
         (nwats,ncation,nanion) = self.getIdentityCounts()
         if mode_forward == 'add salt' :
@@ -415,26 +411,53 @@ class SaltSwap(object):
             log_accept += np.log(1.0*ncation*nanion/(nwats+1)/(nwats+2))
 
         # Accept or reject:
-        if (log_accept > 0.0) or (random.random() < math.exp(log_accept)):
+        if (log_accept > 0.0) or (random.random() < math.exp(log_accept)) :
             # Accept :D
             self.naccepted += 1
             self.setIdentity(mode_forward,change_indices)
-            if self.debug==True: print(mode_forward,"accepted")
+            if self.nverlet_steps > 0:
+                context.setVelocities(-context.getState(getVelocities=True).getVelocities(asNumpy=True))
         else:
             # Reject :(
             # Revert parameters to their previous value
-            self.updateForces(mode_backward,change_indices)
-            # As above, optimise this step so only the relavent paramaters are updated.
+            self.updateForces_fractional(mode_backward,change_indices,fraction=1.0)
             self.forces_to_update.updateParametersInContext(context)
-            if self.debug==True: print(mode_forward,"rejected")
+            if self.nverlet_steps > 0:
+                context.setPositions(initial_positions)
+                context.setVelocities(initial_velocities)
 
-    def NCMC(self,context,nkernals,nsteps,mode,exchange_indices,):
+    def NCMC(self,context,nkernals,nsteps,mode,exchange_indices,debug=False):
+        '''
+        Performs nonequilibrium candidate Monte Carlo for the addition or removal of salt.
 
+        Parameters
+        ----------
+        context : simtk.openmm.Context
+            The context to update
+        nkernals : integer
+            The number of NCMC perturbation-propagation kernals to use.
+        nsteps : integer
+            The number of velocity verlet steps to take in the propagation kernal
+        mode : string
+            Either 'add salt' or 'remove  salt'
+        exchange_indices : numpy array
+            Two element vector containing the residue indices that have been changed
+        Returns
+        -------
+
+        '''
+        if debug == True: print("Starting NCMC...")
         for k in range(nkernals):
             fraction = float(k + 1)/float(nkernals)
+            #if debug == True: print("  About to update forces")
             self.updateForces_fractional(mode,exchange_indices,fraction)
+            #if debug == True: print("  About to update context")
             self.forces_to_update.updateParametersInContext(context)
-            self.verlet_integrator.step(nsteps)
+            #if debug == True: print("  About to use VV")
+            self.vv_integrator.step(nsteps)
+            if debug == True: print("  Propigator {0} complete".format(k))
+        self.compound_integrator.setCurrentIntegrator(0)
+        if debug == True: print("...NCMC complete")
 
     def setIdentity(self,mode,exchange_indices):
         '''
@@ -482,6 +505,7 @@ class SaltSwap(object):
         if mode == 'add salt':
             initial_force = self.water_parameters
             # First, adding the cation.
+            #print(mode,exchange_indices[0])
             molecule = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
             atm_index = 0
             for atom in molecule:
@@ -492,6 +516,7 @@ class SaltSwap(object):
                 self.forces_to_update.setParticleParameters(atom.index,charge=charge,sigma=sigma,epsilon=epsilon)
                 atm_index += 1
             # Second, adding the anion.
+            #print(mode,exchange_indices[1])
             molecule = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
             atm_index = 0
             for atom in molecule:
@@ -502,6 +527,7 @@ class SaltSwap(object):
                 self.forces_to_update.setParticleParameters(atom.index,charge=charge,sigma=sigma,epsilon=epsilon)
                 atm_index += 1
         if mode == 'remove salt':
+            #print(mode,exchange_indices[0])
             molecule = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
             initial_force = self.cation_parameters      # exchange_indices[0] is the cation residue.
             atm_index = 0
@@ -512,6 +538,7 @@ class SaltSwap(object):
                 epsilon = (1-fraction)*initial_force[atm_index]["epsilon"] + fraction*target_force["epsilon"]
                 self.forces_to_update.setParticleParameters(atom.index,charge=charge,sigma=sigma,epsilon=epsilon)
                 atm_index += 1
+            #print(mode,exchange_indices[1])
             molecule = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
             initial_force = self.anion_parameters       # exchange_indices[1] is the anion residue.
             atm_index = 0
@@ -523,51 +550,48 @@ class SaltSwap(object):
                 self.forces_to_update.setParticleParameters(atom.index,charge=charge,sigma=sigma,epsilon=epsilon)
                 atm_index += 1
 
-    def updateForces(self,mode,exchange_indices):
-        '''
-        Update the forcefield parameters and names according the state vector.
+    def _compute_log_probability(self, context):
+        """
+        Compute log probability of current configuration and protonation state.
 
         Parameters
         ----------
-        mode : string
-            Whether the supplied indices will be used to 'add salt' or 'remove salt'
-        exchange_indices : numpy array
-            Which water residues will be converted to cation and anion, or which cation and anion will be turned
-            into 2 water residue.
+
+        context : simtk.openmm.Context
+            the context
+
         Returns
         -------
+        log_P : float
+            log probability of the current context
+        pot_energy : float
+            potential energy of the current context
+        kin_energy : float
+            kinetic energy of the current context
 
-        '''
-        # TODO: add fractional state for NCMC.
+        TODO
+        ----
+        * Generalize this to use ThermodynamicState concept of reduced potential (from repex)
 
-        if mode == 'add salt':
-            molecule = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
-            atm_index = 0
-            for atom in molecule:
-                target_force = self.cation_parameters[atm_index]
-                self.forces_to_update.setParticleParameters(atom.index,charge=target_force["charge"],sigma=target_force["sigma"],epsilon=target_force["epsilon"])
-                atm_index += 1
-            molecule = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
-            atm_index = 0
-            for atom in molecule:
-                target_force = self.anion_parameters[atm_index]
-                self.forces_to_update.setParticleParameters(atom.index,charge=target_force["charge"],sigma=target_force["sigma"],epsilon=target_force["epsilon"])
-                atm_index += 1
-        if mode == 'remove salt':
-            molecule = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
-            atm_index = 0
-            for atom in molecule:
-                target_force = self.water_parameters[atm_index]
-                self.forces_to_update.setParticleParameters(atom.index,charge=target_force["charge"],sigma=target_force["sigma"],epsilon=target_force["epsilon"])
-                atm_index += 1
-            molecule = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
-            atm_index = 0
-            for atom in molecule:
-                target_force = self.water_parameters[atm_index]
-                self.forces_to_update.setParticleParameters(atom.index,charge=target_force["charge"],sigma=target_force["sigma"],epsilon=target_force["epsilon"])
-                atm_index += 1
 
-    def update(self, context,nattempts=None):
+        """
+
+        # Add energetic contribution to log probability.
+        state = context.getState(getEnergy=True)
+        pot_energy = state.getPotentialEnergy()
+        kin_energy = state.getKineticEnergy()
+        total_energy = pot_energy + kin_energy
+        log_P = - total_energy/self.kT
+
+        if self.pressure is not None:
+            # Add pressure contribution for periodic simulations.
+            volume = context.getState().getPeriodicBoxVolume()
+            log_P += -self.pressure * volume * units.AVOGADRO_CONSTANT_NA/self.kT
+
+        # Return the log probability.
+        return log_P, pot_energy, kin_energy
+
+    def update(self, context,nattempts=None,cost=None):
         """
         Perform a number of Monte Carlo update trials for the titration state.
 
@@ -584,9 +608,10 @@ class SaltSwap(object):
 
         """
         if nattempts == None: nattempts = self.nattempts_per_update
+        if cost == None: cost = self.delta_chem/self.kT
         # Perform a number of protonation state update trials.
         for attempt in range(nattempts):
-            self.attempt_identity_swap(context)
+            self.attempt_identity_swap(context,penalty=cost)
         return
 
     def getAcceptanceProbability(self):
