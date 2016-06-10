@@ -72,7 +72,7 @@ if args.gpu==False :
 else :
     platform = openmm.Platform.getPlatformByName('CUDA')
     properties = {'CudaPrecision': 'mixed'}
-    context = openmm.Context(system, compound_integrator, platform)
+    context = openmm.Context(system, compound_integrator, platform, properties)
 context.setPositions(positions)
 
 iterations = args.cycles          # Number of rounds of MD and constant salt moves

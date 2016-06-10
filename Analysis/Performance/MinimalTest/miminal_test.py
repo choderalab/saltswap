@@ -3,7 +3,7 @@ from simtk import openmm, unit
 from simtk.openmm import app
 from openmmtools.testsystems import WaterBox
 
-size = 5.0
+size = 10.0
 wbox = WaterBox(box_edge=size*unit.angstrom, cutoff=size/2*unit.angstrom, nonbondedMethod=app.PME)
 integrator = openmm.LangevinIntegrator(300*unit.kelvin, 1/unit.picosecond, 0.002*unit.picoseconds)
 platform = openmm.Platform.getPlatformByName('CUDA')
@@ -41,10 +41,11 @@ def MC(force,context,i):
         switchon(force,context)
 
 # Global parameters for MD and MC iterations
-iterations = 10
-nsteps = 10
+iterations = 200
+nsteps = 5000
 
 f = open("timings.txt", 'w')
+f.write("iterations={0}, nsteps={1}, size={2}\n".format(iterations,nsteps,size))
 f.write("Time in seconds\n")
 f.close()
 for i in range(iterations):
