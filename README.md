@@ -22,12 +22,6 @@ Code to fluctuate the number of anion-cation (salt) pairs in an explicit water s
     Directory were new code is tested
 ```
 
-`Analysis/Performance/`
-
-```
-    Directory that contains a set of tests and analyses for erratic performance on GPUs. 
-    Tests revealed code is fine.
-```
 ## Authors
 
-    * Gregory A. Ross (code based on openmm-constph)
+    * Gregory A. Ross
