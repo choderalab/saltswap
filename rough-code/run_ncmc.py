@@ -7,9 +7,9 @@ from simtk.openmm import app
 from openmmtools.integrators import VelocityVerletIntegrator
 import cProfile
 import sys
-#sys.path.append("../saltswap/")
+sys.path.append("../saltswap/")
 import saltswap
-#import gc
+import gc
 
 if __name__ == "__main__":
     import argparse
@@ -18,7 +18,7 @@ if __name__ == "__main__":
     parser.add_argument('-o','--out',type=str,help="the filename of the PDB structure of the starting configuration",default="output.pdb")
     parser.add_argument('-d','--data',type=str,help="the filename of the text file where the simulation data will be stored",default="data.txt")
     parser.add_argument('-u','--deltachem',type=float,help="the difference between the chemical potential in kJ/mol of water and salt, default=-650",default=-650.0)
-    parser.add_argument('-c','--cycles',type=int,help="the number of cycles between MD and MCMC salt-water swaps, default=200",default=200)
+    parser.add_argument('-c','--cycles',type=int,help="the number of cycles between MD and MCMC salt-water swaps, default=100",default=200)
     parser.add_argument('-s','--steps',type=int,help="the number of MD steps per cycle, default=250000",default=250000)
     parser.add_argument('-a','--attempts',type=int,help="the number of salt-water swap moves attempted, default=100",default=100)
     parser.add_argument('-e','--equilibration',type=int,help="the number of equilibration steps, default=1000",default=1000)
@@ -27,6 +27,8 @@ if __name__ == "__main__":
     parser.add_argument("--gpu",action='store_true',help="whether the simulation will be run on a GPU, default=False",default=False)
     parser.add_argument("--profile",action='store_true',help="whether each MD-MC iteration will be profiled, default=False",default=False)
     args = parser.parse_args()
+
+#err = open("error.txt",'w')
 
 # CONSTANTS
 kB = unit.BOLTZMANN_CONSTANT_kB * unit.AVOGADRO_CONSTANT_NA
@@ -114,6 +116,7 @@ for i in range(iterations):
     # Custom reporters: (simulations.reporters severely slows the simulations down)
     cnts = mc_saltswap.getIdentityCounts()
     nrg = mc_saltswap.getPotEnergy(context)
+    dims = pdb.topology.getUnitCellDimensions()
     acc = mc_saltswap.getAcceptanceProbability()
     f = open(args.data, 'a')
     s = "{:4} {:5} {:5}   {:0.2f} {:4}\n".format(i,cnts[0],cnts[1],round(acc,2),iter_time.seconds)
@@ -122,7 +125,7 @@ for i in range(iterations):
     mc_saltswap.resetStatistics()
     positions = context.getState(getPositions=True,enforcePeriodicBox=True).getPositions(asNumpy=True)
     app.PDBFile.writeModel(pdb.topology, positions, file=pdbfile, modelIndex=i+1)
-    #gc.collect()
+    gc.collect()
 tm = datetime.now() - startTime
 
 s = "\nElapsed time in seconds = {:7}".format(tm.seconds)
