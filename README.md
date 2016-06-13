@@ -30,4 +30,4 @@ Code to fluctuate the number of anion-cation (salt) pairs in an explicit water s
 ```
 ## Authors
 
-    * Gregory A. Ross (code based on openmm-constph)
+    * Gregory A. Ross

@@ -117,13 +117,12 @@ class SaltSwap(object):
         self.cationName = cationName
         self.waterName = waterName
 
-        self.integrator = integrator
         # Create a Verlet integrator to handle NCMC integration
-        #self.compound_integrator = openmm.CompoundIntegrator()
-        #self.compound_integrator.addIntegrator(integrator)
-        #self.vv_integrator = VelocityVerletIntegrator(ncmc_timestep)
-        #self.compound_integrator.addIntegrator(self.vv_integrator)
-        #self.compound_integrator.setCurrentIntegrator(0)  # make user integrator active
+        self.compound_integrator = openmm.CompoundIntegrator()
+        self.compound_integrator.addIntegrator(integrator)
+        self.vv_integrator = VelocityVerletIntegrator(ncmc_timestep)
+        self.compound_integrator.addIntegrator(self.vv_integrator)
+        self.compound_integrator.setCurrentIntegrator(0)  # make user integrator active
         self.nkernals  = nkernals
         self.nverlet_steps = nverlet_steps
 
@@ -387,7 +386,7 @@ class SaltSwap(object):
             except Exception:
                 logP_final = logP_initial - 999999999999.0   # If simulation blows up, making the new logP unfavourable.
                 self.nan += 1
-        elif self.debug and self.nkernals==1:               # To make sure energies between NCMC and instant switching are broadly equilivalent.
+        elif self.debug and self.nkernals==1:
             self.NCMC(context,self.nkernals,self.nverlet_steps,mode_forward,change_indices)
             logP_final, pot_ncmc, kin2 = self._compute_log_probability(context)
             self.nrg_ncmc.append(pot_ncmc)
@@ -447,7 +446,6 @@ class SaltSwap(object):
         -------
 
         '''
-        self.integrator.setCurrentIntegrator(1)
         if debug == True: print("Starting NCMC...")
         for k in range(nkernals):
             fraction = float(k + 1)/float(nkernals)
@@ -456,10 +454,9 @@ class SaltSwap(object):
             #if debug == True: print("  About to update context")
             self.forces_to_update.updateParametersInContext(context)
             #if debug == True: print("  About to use VV")
-            #self.vv_integrator.step(nsteps)
-            self.integrator.step(nsteps)
+            self.vv_integrator.step(nsteps)
             if debug == True: print("  Propigator {0} complete".format(k))
-        self.integrator.setCurrentIntegrator(0)
+        self.compound_integrator.setCurrentIntegrator(0)
         if debug == True: print("...NCMC complete")
 
     def setIdentity(self,mode,exchange_indices):
