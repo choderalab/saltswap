@@ -26,7 +26,7 @@ Code to fluctuate the number of anion-cation (salt) pairs in an explicit water s
 
 ```
     Directory that contains a set of tests and analyses for erratic performance on GPUs. 
-    Tests revealed code is fine.
+    Tests revealed code is fine. Further tests required in future.
 ```
 ## Authors
 
