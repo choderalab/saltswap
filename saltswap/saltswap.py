@@ -164,7 +164,7 @@ class SaltSwap(object):
         # For comparing NCMC and instance switching energies only:
         self.nrg_ncmc = []
         self.nrg_isnt = []
-
+        self.work = []
         # For counting the number of NaNs I get in NCMC. These are automatically rejected.
         self.nan = 0
         return
@@ -227,16 +227,16 @@ class SaltSwap(object):
         # If ion parameters are not supplied, use Joung and Cheatham parameters.
         if ion_name == self.cationName:
             if ion_params == None:
-                ion_param_list[0] = {'charge': 1.0*units.elementary_charge,'sigma': 0.4477657*units.nanometer,'epsilon':0.148912744*units.kilojoule_per_mole}
+                ion_param_list[0] = {'charge': 1.0*units.elementary_charge, 'sigma': 0.2439281*units.nanometer, 'epsilon': 0.0874393*units.kilocalorie_per_mole}
             else:
                 ion_param_list[0] = ion_params
         elif ion_name == self.anionName:
             if ion_params == None:
-                ion_param_list[0] = {'charge': -1.0*units.elementary_charge, 'sigma': 0.2439281*units.nanometer, 'epsilon': 0.3658460312*units.kilojoule_per_mole}
+                ion_param_list[0] = {'charge': -1.0*units.elementary_charge,'sigma': 0.4477657*units.nanometer,'epsilon':0.0355910*units.kilocalorie_per_mole}
             else:
                 ion_parm_list[0] = ion_params
         else:
-            raise NameError('Ion name %s does not match known cation or anion names' % ion_name)
+            raise NameError('Ion name %s does not match known cation or anion name' % ion_name)
 
         return  ion_param_list
 
@@ -401,8 +401,9 @@ class SaltSwap(object):
             logP_final, pot2, kin2 = self._compute_log_probability(context)
         # Compute final energy
 
-        #logP_final, pot2, kin2 = self._compute_log_probability(context)
-        log_accept += logP_final - logP_initial + cost
+        work = logP_final - logP_initial
+        self.work.append(work)
+        log_accept += work + cost
  
         # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
         (nwats,ncation,nanion) = self.getIdentityCounts()
@@ -451,12 +452,8 @@ class SaltSwap(object):
         if debug == True: print("Starting NCMC...")
         for k in range(nkernals):
             fraction = float(k + 1)/float(nkernals)
-            #if debug == True: print("  About to update forces")
             self.updateForces_fractional(mode,exchange_indices,fraction)
-            #if debug == True: print("  About to update context")
             self.forces_to_update.updateParametersInContext(context)
-            #if debug == True: print("  About to use VV")
-            #self.vv_integrator.step(nsteps)
             self.integrator.step(nsteps)
             if debug == True: print("  Propigator {0} complete".format(k))
         self.integrator.setCurrentIntegrator(0)

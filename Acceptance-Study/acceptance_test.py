@@ -3,8 +3,8 @@ from simtk.openmm import app
 from openmmtools.testsystems import WaterBox
 from openmmtools import integrators
 from datetime import datetime
-import sys
-sys.path.append("../saltswap/")
+#import sys
+#sys.path.append("../saltswap/")
 import saltswap
 
 if __name__ == "__main__":
@@ -66,6 +66,13 @@ s = "\n{:4} {:5} {:5} {:4} {:6}\n".format("Step","Nwats","Nsalt","AccProb","Time
 f.write(s)
 f.close()
 
+# Opening a file to store work data
+f = open("work_"+args.data,"w")
+f.write("Total energy differences per attempt\n")
+s = "Niterations = {:4}, Nsteps = {:7}, Nattemps = {:3}, Dchem = {:5}, Nkernals = {:5}, Nverlet = {:3}\n".format(args.cycles,args.steps,args.attempts,args.deltachem,args.nkernals,args.nverlet)
+f.write(s)
+f.close()
+
 # Opening a PDB file to store configurations
 positions = context.getState(getPositions=True,enforcePeriodicBox=True).getPositions(asNumpy=True)
 pdbfile = open(args.out, 'w')
@@ -83,7 +90,7 @@ for i in range(iterations):
     compound_integrator.step(nsteps)
     mc_saltswap.update(context,nattempts=nattempts)
     iter_time = datetime.now() - iter_start
-    # Custom reporters: (simulations.reporters severely slows the simulations down)
+    # Saving acceptance probability data:
     cnts = mc_saltswap.getIdentityCounts()
     nrg = mc_saltswap.getPotEnergy(context)
     acc = mc_saltswap.getAcceptanceProbability()
@@ -91,6 +98,13 @@ for i in range(iterations):
     s = "{:4} {:5} {:5}   {:0.2f} {:4}\n".format(i,cnts[0],cnts[1],round(acc,2),iter_time.seconds)
     f.write(s)
     f.close()
+    # Saving work data for each of the nattempts and reseting:
+    f = open("work_"+args.data,"a")
+    f.writelines("%s " % item  for item in mc_saltswap.work)
+    f.write("\n")
+    f.close()
+    mc_saltswap.work=[]
+    # Saving structures
     positions = context.getState(getPositions=True,enforcePeriodicBox=True).getPositions(asNumpy=True)
     app.PDBFile.writeModel(wbox.topology, positions, file=pdbfile, modelIndex=i+1)
 tm = datetime.now() - startTime
