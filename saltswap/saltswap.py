@@ -431,6 +431,8 @@ class SaltSwap(object):
     def NCMC(self,context,nkernals,nsteps,mode,exchange_indices,debug=False):
         '''
         Performs nonequilibrium candidate Monte Carlo for the addition or removal of salt.
+        So that the protocol is time symmetric, the protocol is given by
+             propagation -> perturbation -> propagation
 
         Parameters
         ----------
@@ -448,16 +450,16 @@ class SaltSwap(object):
         -------
 
         '''
-        self.integrator.setCurrentIntegrator(1)
         if debug == True: print("Starting NCMC...")
+        self.integrator.setCurrentIntegrator(1)
+        self.integrator.step(nsteps)
         for k in range(nkernals):
             fraction = float(k + 1)/float(nkernals)
             self.updateForces_fractional(mode,exchange_indices,fraction)
             self.forces_to_update.updateParametersInContext(context)
             self.integrator.step(nsteps)
-            if debug == True: print("  Propigator {0} complete".format(k))
-        self.integrator.setCurrentIntegrator(0)
         if debug == True: print("...NCMC complete")
+        self.integrator.setCurrentIntegrator(0)
 
     def setIdentity(self,mode,exchange_indices):
         '''
