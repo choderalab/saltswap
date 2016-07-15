@@ -65,7 +65,7 @@ class SaltSwap(object):
     """
 
     def __init__(self, system, topology,temperature, delta_chem, integrator, pressure=None, nattempts_per_update=50, debug=False,
-        nkernals=1, nverlet_steps=0, ncmc_timestep=1.0*units.femtoseconds, waterName="HOH", cationName='Na+', anionName='Cl-'):
+        nkernals=1, nverlet_steps=0, waterName="HOH", cationName='Na+', anionName='Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
 
@@ -118,12 +118,7 @@ class SaltSwap(object):
         self.waterName = waterName
 
         self.integrator = integrator
-        # Create a Verlet integrator to handle NCMC integration
-        #self.compound_integrator = openmm.CompoundIntegrator()
-        #self.compound_integrator.addIntegrator(integrator)
-        #self.vv_integrator = VelocityVerletIntegrator(ncmc_timestep)
-        #self.compound_integrator.addIntegrator(self.vv_integrator)
-        #self.compound_integrator.setCurrentIntegrator(0)  # make user integrator active
+
         self.nkernals  = nkernals
         self.nverlet_steps = nverlet_steps
 
@@ -141,6 +136,11 @@ class SaltSwap(object):
             forces = {system.getForce(index).__class__.__name__: system.getForce(index) for index in range(system.getNumForces())}
             if 'MonteCarloBarostat' not in forces:
                 raise Exception("`pressure` is specified, but `system` object lacks a `MonteCarloBarostat`")
+                self.barostat = None
+                self.barofreq = None
+            else:
+                self.barostat = forces['MonteCarloBarostat']
+                self.barofreq = self.barostat.getFrequency()
 
         self.mutable_residues = self.identifyResidues(self.topology,residue_names=(self.waterName,self.anionName,self.cationName))
 
@@ -164,7 +164,11 @@ class SaltSwap(object):
         # For comparing NCMC and instance switching energies only:
         self.nrg_ncmc = []
         self.nrg_isnt = []
-        self.work = []
+
+        # Saving the work values for adding and removing salt
+        self.work_add = []
+        self.work_rm = []
+
         # For counting the number of NaNs I get in NCMC. These are automatically rejected.
         self.nan = 0
         return
@@ -336,12 +340,13 @@ class SaltSwap(object):
         Notes
         -----
         Code currently written specifically for exchanging two water molecules for Na and Cl, with generalisation to follow.
-        Currently without NCMC, to be added.
         '''
         self.nattempted += 1
 
+        if self.barostat is not None:
+            self.barostat.setFrequency(0)
+
         # If using NCMC, store initial positions.
-        #TODO: also save velococities?
         if self.nverlet_steps > 0:
             initial_positions = context.getState(getPositions=True).getPositions(asNumpy=True)
             initial_velocities = context.getState(getVelocities=True).getVelocities(asNumpy=True)
@@ -399,11 +404,15 @@ class SaltSwap(object):
             self.updateForces_fractional(mode_forward,change_indices,fraction=1.0)
             self.forces_to_update.updateParametersInContext(context)
             logP_final, pot2, kin2 = self._compute_log_probability(context)
-        # Compute final energy
 
-        work = logP_final - logP_initial
-        self.work.append(work)
-        log_accept += work + cost
+        # Computing the work after velocity Verlet: Work = E_final - E_initial
+        work = logP_initial - logP_final
+        if mode_forward == "remove salt":
+            self.work_rm.append(work)
+        else:
+            self.work_add.append(work)
+
+        log_accept += cost - work
  
         # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
         (nwats,ncation,nanion) = self.getIdentityCounts()
@@ -427,6 +436,10 @@ class SaltSwap(object):
             if self.nverlet_steps > 0:
                 context.setPositions(initial_positions)
                 context.setVelocities(initial_velocities)
+
+        if self.barostat is not None:
+            self.barostat.setFrequency(self.barofreq)
+
 
     def NCMC(self,context,nkernals,nsteps,mode,exchange_indices,debug=False):
         '''
