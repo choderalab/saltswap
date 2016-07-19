@@ -64,7 +64,7 @@ class SaltSwap(object):
 
     """
 
-    def __init__(self, system, topology,temperature, delta_chem, integrator, pressure=None, nattempts_per_update=50, debug=False,
+    def __init__(self, system, topology, temperature, delta_chem, integrator, pressure=None, nattempts_per_update=50, debug=False,
         nkernals=1, nverlet_steps=0, waterName="HOH", cationName='Na+', anionName='Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
@@ -326,7 +326,7 @@ class SaltSwap(object):
         state = context.getState(getEnergy=True)
         return state.getPotentialEnergy()
 
-    def attempt_identity_swap(self,context,penalty):
+    def attempt_identity_swap(self,context,penalty,saltmax=None):
         '''
         Attempt the exchange of (possibly multiple) chemical species.
 
@@ -334,14 +334,20 @@ class SaltSwap(object):
         ----------
         context : simtk.openmm.Context
             The context to update
-        temperature : quantity in units of Kelvin
-            The inverse temperature of the simulation
+        penalty : list floats
+            The free energy to add salt (first index) and remove salt (second index)
+        saltmax : float
+            The maximum number of salt pairs that you wish to be added. If None, then the maximum number is the
+            number of water molecules divided by 2.
 
         Notes
         -----
         Code currently written specifically for exchanging two water molecules for Na and Cl, with generalisation to follow.
         '''
         self.nattempted += 1
+
+        if type(penalty)==float:
+            penalty = [penalty,-penalty]
 
         if self.barostat is not None:
             self.barostat.setFrequency(0)
@@ -351,6 +357,10 @@ class SaltSwap(object):
             initial_positions = context.getState(getPositions=True).getPositions(asNumpy=True)
             initial_velocities = context.getState(getVelocities=True).getVelocities(asNumpy=True)
 
+        # Introducing a maximum capacity of salt molecules for the 'self adjusted mixture sampling calibration.
+        if saltmax == None:
+            saltmax = (len(self.mutable_residues) - len(self.mutable_residues) % 2)/2
+
         # Initializing the exponent of the acceptance test. Adding to it as we go along.
         log_accept = 0.0
         # Whether to delete or add salt by selecting random water molecules to turn into a cation and an anion or vice versa.
@@ -359,27 +369,27 @@ class SaltSwap(object):
             mode_forward = "add salt"
             mode_backward ="remove salt"
             log_accept -= np.log(2)                     # Due to asymmetric proposal probabilities
-            cost = penalty              # The free energy to remove salt and add 2 waters to bulk water
-        elif (sum(self.stateVector==0) < 2):
+            cost = penalty[0]              # The free energy to remove salt and add 2 waters to bulk water
+        elif (sum(self.stateVector==1) >= saltmax):
             mode_forward = "remove salt"
             mode_backward = "add salt"
             cation_index = np.random.choice(a=np.where(self.stateVector==1)[0],size=1)
             anion_index = np.random.choice(a=np.where(self.stateVector==2)[0],size=1)
             change_indices = np.array([cation_index,anion_index])
             log_accept -= np.log(2)                     # Due to asymmetric proposal probabilities
-            cost = -penalty             # The free energy to remove 2 waters and add salt to bulk water
+            cost = penalty[1]
         elif (np.random.random() < 0.5):
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0],size=2,replace=False)
             mode_forward = "add salt"
             mode_backward ="remove salt"
-            cost = penalty              # The free energy to remove salt and add 2 waters to bulk water
+            cost = penalty[0]
         else:
             mode_forward = "remove salt"
             mode_backward = "add salt"
             cation_index = np.random.choice(a=np.where(self.stateVector==1)[0],size=1)
             anion_index = np.random.choice(a=np.where(self.stateVector==2)[0],size=1)
             change_indices = np.array([cation_index,anion_index])
-            cost = -penalty             # The free energy to remove 2 waters and add salt to bulk water
+            cost = penalty[1]
 
         # Compute initial energy
         logP_initial, pot1, kin1 = self._compute_log_probability(context)
@@ -412,7 +422,9 @@ class SaltSwap(object):
         else:
             self.work_add.append(work)
 
-        log_accept += cost - work
+        # Cost = F_final - F_initial, where F_initial is the free energy to have the current number of salt molecules.
+        # log_accept += cost - work
+        log_accept += -cost - work
  
         # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
         (nwats,ncation,nanion) = self.getIdentityCounts()
@@ -606,7 +618,7 @@ class SaltSwap(object):
         # Return the log probability.
         return log_P, pot_energy, kin_energy
 
-    def update(self, context,nattempts=None,cost=None):
+    def update(self, context,nattempts=None,cost=None,saltmax=None):
         """
         Perform a number of Monte Carlo update trials for the titration state.
 
@@ -623,10 +635,11 @@ class SaltSwap(object):
 
         """
         if nattempts == None: nattempts = self.nattempts_per_update
-        if cost == None: cost = self.delta_chem/self.kT
+        if cost == None:
+            cost = [self.delta_chem/self.kT, -self.delta_chem/self.kT]      # [free energy to add salt, free energy to remove salt]
         # Perform a number of protonation state update trials.
         for attempt in range(nattempts):
-            self.attempt_identity_swap(context,penalty=cost)
+            self.attempt_identity_swap(context,penalty=cost,saltmax=saltmax)
         return
 
     def getAcceptanceProbability(self):
