@@ -49,7 +49,7 @@ import simtk.openmm as openmm
 import simtk.unit as unit
 from openmmtools import integrators
 
-class Sample(object):
+class MCMCSampler(object):
     """
     Wrapper for MD and saltswap moves.
 
@@ -64,7 +64,7 @@ class Sample(object):
 
     """
     def __init__(self, system, topology, positions, temperature=300*unit.kelvin, pressure=1*unit.atmospheres, delta_chem=0, mdsteps=2000, saltsteps=0, volsteps = 25,
-        ctype = 'CPU', nkernals=0, nverlet=0, waterName="HOH", cationName='Na+', anionName='Cl-', debug=False):
+        ctype = 'CPU', nkernels=0, nverlet=0, waterName="HOH", cationName='Na+', anionName='Cl-', debug=False):
 
 
         self.delta_chem = delta_chem
@@ -101,7 +101,7 @@ class Sample(object):
 
         # Initialising the saltswap object
         self.saltswap = SaltSwap(system=system,topology=topology,temperature=temperature, delta_chem=delta_chem,integrator=self.integrator,pressure=pressure,
-                                 nkernals=nkernals, nverlet_steps=nverlet, waterName=waterName, cationName=cationName, anionName=anionName, debug=debug)
+                                 nkernels=nkernels, nverlet_steps=nverlet, waterName=waterName, cationName=cationName, anionName=anionName, debug=debug)
 
     def gen_config(self,mdsteps=None):
         """
@@ -147,7 +147,7 @@ class Sample(object):
         for i in range(nmoves):
             self.move(mdsteps,saltsteps,delta_chem)
 
-class SaltSAMS(Sample):
+class SaltSAMS(MCMCSampler):
     """
     Implementation of self-adjusted mixture sampling for exchanging water and salts in a grand canonical methodology. The
     mixture is over integer increments of the number of salt molecules up to a specified maximum. The targed density is

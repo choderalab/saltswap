@@ -65,7 +65,7 @@ class SaltSwap(object):
     """
 
     def __init__(self, system, topology, temperature, delta_chem, integrator, pressure=None, nattempts_per_update=50, debug=False,
-        nkernals=1, nverlet_steps=0, waterName="HOH", cationName='Na+', anionName='Cl-'):
+        nkernels=1, nverlet_steps=0, waterName="HOH", cationName='Na+', anionName='Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
 
@@ -85,7 +85,7 @@ class SaltSwap(object):
             For explicit solvent simulations, the pressure.
         debug : bool, optional, default=False
             Turn debug information on/off.
-        nkernals : integer, optional, default=0
+        nkernels : integer, optional, default=0
             Number of steps per NCMC switching trial, or 1 if instantaneous Monte Carlo is to be used.
         nverlet_steps : integer
             Number of velocity verlet steps to take in each NCMC iteration
@@ -119,7 +119,7 @@ class SaltSwap(object):
 
         self.integrator = integrator
 
-        self.nkernals  = nkernals
+        self.nkernels  = nkernels
         self.nverlet_steps = nverlet_steps
 
         # Set constraint tolerance.
@@ -136,7 +136,6 @@ class SaltSwap(object):
             forces = {system.getForce(index).__class__.__name__: system.getForce(index) for index in range(system.getNumForces())}
             if 'MonteCarloBarostat' not in forces:
                 raise Exception("`pressure` is specified, but `system` object lacks a `MonteCarloBarostat`")
-                self.barostat = None
                 self.barofreq = None
             else:
                 self.barostat = forces['MonteCarloBarostat']
@@ -162,15 +161,15 @@ class SaltSwap(object):
         self.resetStatistics()
 
         # For comparing NCMC and instance switching energies only:
-        self.nrg_ncmc = []
-        self.nrg_isnt = []
+        #self.nrg_ncmc = []
+        #self.nrg_isnt = []
 
         # Saving the work values for adding and removing salt
         self.work_add = []
         self.work_rm = []
 
         # For counting the number of NaNs I get in NCMC. These are automatically rejected.
-        self.nan = 0
+        #self.nan = 0
         return
 
     def retrieveResidueParameters(self, topology, resname):
@@ -395,21 +394,9 @@ class SaltSwap(object):
         logP_initial, pot1, kin1 = self._compute_log_probability(context)
 
         # Perform perturbation to remove or add salt with NCMC and calculate energies
-        if self.nkernals > 1 or (self.debug==False and self.nkernals==1):
-            try:
-                self.NCMC(context,self.nkernals,self.nverlet_steps,mode_forward,change_indices,self.debug)
-                logP_final, pot2, kin2 = self._compute_log_probability(context)
-            except Exception:
-                logP_final = logP_initial - 999999999999.0   # If simulation blows up, making the new logP unfavourable.
-                self.nan += 1
-        elif self.debug and self.nkernals==1:               # To make sure energies between NCMC and instant switching are broadly equilivalent.
-            self.NCMC(context,self.nkernals,self.nverlet_steps,mode_forward,change_indices)
-            logP_final, pot_ncmc, kin2 = self._compute_log_probability(context)
-            self.nrg_ncmc.append(pot_ncmc)
-            self.updateForces_fractional(mode_forward,change_indices,fraction=1.0)
-            self.forces_to_update.updateParametersInContext(context)
-            logP_final, pot_inst, kin2 = self._compute_log_probability(context)
-            self.nrg_isnt.append(pot_inst)
+        if self.nkernels >= 1 and self.nverlet_steps > 0:
+            self.NCMC(context,self.nkernels,self.nverlet_steps,mode_forward,change_indices,self.debug)
+            logP_final, pot2, kin2 = self._compute_log_probability(context)
         else:
             self.updateForces_fractional(mode_forward,change_indices,fraction=1.0)
             self.forces_to_update.updateParametersInContext(context)
@@ -453,7 +440,7 @@ class SaltSwap(object):
             self.barostat.setFrequency(self.barofreq)
 
 
-    def NCMC(self,context,nkernals,nsteps,mode,exchange_indices,debug=False):
+    def NCMC(self,context,nkernels,nsteps,mode,exchange_indices,debug=False):
         '''
         Performs nonequilibrium candidate Monte Carlo for the addition or removal of salt.
         So that the protocol is time symmetric, the protocol is given by
@@ -463,7 +450,7 @@ class SaltSwap(object):
         ----------
         context : simtk.openmm.Context
             The context to update
-        nkernals : integer
+        nkernels : integer
             The number of NCMC perturbation-propagation kernals to use.
         nsteps : integer
             The number of velocity verlet steps to take in the propagation kernal
@@ -478,8 +465,8 @@ class SaltSwap(object):
         if debug == True: print("Starting NCMC...")
         self.integrator.setCurrentIntegrator(1)
         self.integrator.step(nsteps)
-        for k in range(nkernals):
-            fraction = float(k + 1)/float(nkernals)
+        for k in range(nkernels):
+            fraction = float(k + 1)/float(nkernels)
             self.updateForces_fractional(mode,exchange_indices,fraction)
             self.forces_to_update.updateParametersInContext(context)
             self.integrator.step(nsteps)
@@ -637,6 +624,8 @@ class SaltSwap(object):
         if nattempts == None: nattempts = self.nattempts_per_update
         if cost == None:
             cost = [self.delta_chem/self.kT, -self.delta_chem/self.kT]      # [free energy to add salt, free energy to remove salt]
+        elif type(cost) == float or type(cost) == int:
+            cost = [cost, -cost]
         # Perform a number of protonation state update trials.
         for attempt in range(nattempts):
             self.attempt_identity_swap(context,penalty=cost,saltmax=saltmax)
