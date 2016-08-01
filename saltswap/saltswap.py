@@ -451,9 +451,9 @@ class SaltSwap(object):
         context : simtk.openmm.Context
             The context to update
         nkernels : integer
-            The number of NCMC perturbation-propagation kernals to use.
+            The number of NCMC perturbation-propagation kernels to use.
         nsteps : integer
-            The number of velocity verlet steps to take in the propagation kernal
+            The number of velocity verlet steps to take in the propagation kernel
         mode : string
             Either 'add salt' or 'remove  salt'
         exchange_indices : numpy array
