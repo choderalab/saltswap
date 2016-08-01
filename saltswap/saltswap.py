@@ -440,8 +440,8 @@ class SaltSwap(object):
             self.barostat.setFrequency(self.barofreq)
 
 
-    def NCMC(self,context,nkernels,nsteps,mode,exchange_indices,debug=False):
-        '''
+    def NCMC(self,context,nkernels,nsteps,mode,exchange_indices,propagator='GHMC'):
+        """
         Performs nonequilibrium candidate Monte Carlo for the addition or removal of salt.
         So that the protocol is time symmetric, the protocol is given by
              propagation -> perturbation -> propagation
@@ -461,17 +461,42 @@ class SaltSwap(object):
         Returns
         -------
 
-        '''
-        if debug == True: print("Starting NCMC...")
+        """
         self.integrator.setCurrentIntegrator(1)
-        self.integrator.step(nsteps)
-        for k in range(nkernels):
-            fraction = float(k + 1)/float(nkernels)
-            self.updateForces_fractional(mode,exchange_indices,fraction)
-            self.forces_to_update.updateParametersInContext(context)
+        if propagator == 'velocityVerlet':
+            # Get initial energy
+            pot_initial= self.getPotEnergy(context)
+            # Propagation
             self.integrator.step(nsteps)
-        if debug == True: print("...NCMC complete")
+            for k in range(nkernels):
+                # Perturbation
+                fraction = float(k + 1)/float(nkernels)
+                self.updateForces_fractional(mode,exchange_indices,fraction)
+                self.forces_to_update.updateParametersInContext(context)
+                # Propagation
+                self.integrator.step(nsteps)
+            # Get final energy and calculate total work
+            pot_final= self.getPotEnergy(context)
+            work =  pot_final -  pot_initial
+
+        elif propagator == 'GHMC':
+            work = 0   # Check units
+            self.integrator.step(nsteps)
+            for k in range(nkernels):
+                pot_initial = self.getPotEnergy(context)
+                # Perturbation
+                fraction = float(k + 1)/float(nkernels)
+                self.updateForces_fractional(mode,exchange_indices,fraction)
+                self.forces_to_update.updateParametersInContext(context)
+                # Update the accumulated work
+                pot_final = self.getPotEnergy(context)
+                work += pot_final - pot_initial
+                # Propagation
+                self.integrator.step(nsteps)
+
         self.integrator.setCurrentIntegrator(0)
+
+        return work
 
     def setIdentity(self,mode,exchange_indices):
         '''
