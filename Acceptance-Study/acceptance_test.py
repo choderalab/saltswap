@@ -17,7 +17,7 @@ if __name__ == "__main__":
     parser.add_argument('-s','--steps',type=int,help="the number of MD steps per cycle, default=25000",default=25000)
     parser.add_argument('-a','--attempts',type=int,help="the number of salt-water swap moves attempted, default=100",default=100)
     parser.add_argument('-e','--equilibration',type=int,help="the number of equilibration steps, default=1000",default=1000)
-    parser.add_argument('--nkernals',type=int,help="the number of NCMC kernals, default=1000",default=1000)
+    parser.add_argument('--nkernels',type=int,help="the number of NCMC kernels, default=1000",default=1000)
     parser.add_argument('--nverlet',type=int,help="the number of Verlet steps used in each NCMC iteration, default=1",default=1)
     parser.add_argument("--gpu",action='store_true',help="whether the simulation will be run on a GPU, default=False",default=False)
     args = parser.parse_args()
@@ -56,7 +56,7 @@ context.setVelocitiesToTemperature(temperature)
 compound_integrator.step(args.equilibration)
 
 # Creating the saltswap object
-mc_saltswap = saltswap.SaltSwap(system=wbox.system,topology=wbox.topology,temperature=temperature,delta_chem=delta_chem,integrator=compound_integrator,pressure=pressure,debug=False,nkernals=args.nkernals, nverlet_steps=args.nverlet)
+mc_saltswap = saltswap.SaltSwap(system=wbox.system,topology=wbox.topology,temperature=temperature,delta_chem=delta_chem,integrator=compound_integrator,pressure=pressure,debug=False,nkernels=args.nkernels, nverlet_steps=args.nverlet)
 
 # Opening file to store simulation data
 f = open(args.data, 'w')

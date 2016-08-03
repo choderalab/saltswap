@@ -65,7 +65,7 @@ class SaltSwap(object):
     """
 
     def __init__(self, system, topology, temperature, delta_chem, integrator, pressure=None, nattempts_per_update=50, debug=False,
-        nkernels=1, nverlet_steps=0, waterName="HOH", cationName='Na+', anionName='Cl-'):
+        nkernels=1, nverlet_steps=0, propagator='GHMC', waterName="HOH", cationName='Na+', anionName='Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
 
@@ -119,6 +119,14 @@ class SaltSwap(object):
 
         self.integrator = integrator
 
+        proplist = ['GHMC','velocityVerlet']
+        if propagator in ['GHMC','velocityVerlet']:
+            self.propagator = propagator
+        elif propagator not in ['GHMC','velocityVerlet'] and nkernels==0:
+            pass
+        else:
+            raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
+
         self.nkernels  = nkernels
         self.nverlet_steps = nverlet_steps
 
@@ -169,7 +177,7 @@ class SaltSwap(object):
         self.work_rm = []
 
         # For counting the number of NaNs I get in NCMC. These are automatically rejected.
-        #self.nan = 0
+        self.nan = 0
         return
 
     def retrieveResidueParameters(self, topology, resname):
@@ -309,7 +317,7 @@ class SaltSwap(object):
 
         return
 
-    def getPotEnergy(self,context):
+    def getPotEnergy(self,context,dimensionless=True):
         '''
         Extract the potential energy of the system
 
@@ -323,7 +331,11 @@ class SaltSwap(object):
 
         '''
         state = context.getState(getEnergy=True)
-        return state.getPotentialEnergy()
+        pot_energy = state.getPotentialEnergy()
+        if dimensionless == True:
+            return pot_energy/self.kT
+        else:
+            return pot_energy
 
     def attempt_identity_swap(self,context,penalty,saltmax=None):
         '''
@@ -391,19 +403,25 @@ class SaltSwap(object):
             cost = penalty[1]
 
         # Compute initial energy
-        logP_initial, pot1, kin1 = self._compute_log_probability(context)
+        #logP_initial, pot1, kin1 = self._compute_log_probability(context)
 
         # Perform perturbation to remove or add salt with NCMC and calculate energies
-        if self.nkernels >= 1 and self.nverlet_steps > 0:
-            self.NCMC(context,self.nkernels,self.nverlet_steps,mode_forward,change_indices,self.debug)
-            logP_final, pot2, kin2 = self._compute_log_probability(context)
+        if self.nkernels > 0 and self.nverlet_steps > 0:
+            try:
+                work = self.NCMC(context,self.nkernels,self.nverlet_steps,mode_forward,change_indices,propagator=self.propagator)
+            except Exception as detail:
+                work = 1000000000000.0               # If the simulation explodes during NCMC, reject with high work
+                if detail[0]=='Particle coordinate is nan': self.nan += 1
+            #logP_final, pot2, kin2 = self._compute_log_probability(context)
         else:
+            logP_initial, pot1, kin1 = self._compute_log_probability(context)
             self.updateForces_fractional(mode_forward,change_indices,fraction=1.0)
             self.forces_to_update.updateParametersInContext(context)
             logP_final, pot2, kin2 = self._compute_log_probability(context)
+            work = logP_initial - logP_final
 
         # Computing the work after velocity Verlet: Work = E_final - E_initial
-        work = logP_initial - logP_final
+        #work = logP_initial - logP_final
         if mode_forward == "remove salt":
             self.work_rm.append(work)
         else:
@@ -446,6 +464,9 @@ class SaltSwap(object):
         So that the protocol is time symmetric, the protocol is given by
              propagation -> perturbation -> propagation
 
+
+        TODO: have the propagation kernel type read automatically
+
         Parameters
         ----------
         context : simtk.openmm.Context
@@ -458,8 +479,11 @@ class SaltSwap(object):
             Either 'add salt' or 'remove  salt'
         exchange_indices : numpy array
             Two element vector containing the residue indices that have been changed
+
         Returns
         -------
+        work: simtk.unit
+            The work for appropriate for the stated propagator
 
         """
         self.integrator.setCurrentIntegrator(1)
@@ -478,9 +502,8 @@ class SaltSwap(object):
             # Get final energy and calculate total work
             pot_final= self.getPotEnergy(context)
             work =  pot_final -  pot_initial
-
         elif propagator == 'GHMC':
-            work = 0   # Check units
+            work = 0    # Unitless work
             self.integrator.step(nsteps)
             for k in range(nkernels):
                 pot_initial = self.getPotEnergy(context)
@@ -490,9 +513,12 @@ class SaltSwap(object):
                 self.forces_to_update.updateParametersInContext(context)
                 # Update the accumulated work
                 pot_final = self.getPotEnergy(context)
-                work += pot_final - pot_initial
+                work += (pot_final - pot_initial)
                 # Propagation
                 self.integrator.step(nsteps)
+        else:
+            print('Fatal: Propagator not recognized')
+            work = 0
 
         self.integrator.setCurrentIntegrator(0)
 
@@ -649,8 +675,12 @@ class SaltSwap(object):
         if nattempts == None: nattempts = self.nattempts_per_update
         if cost == None:
             cost = [self.delta_chem/self.kT, -self.delta_chem/self.kT]      # [free energy to add salt, free energy to remove salt]
+        elif type(cost) == units.Quantity:
+            cost = [cost/self.kT, -cost/self.kT]
         elif type(cost) == float or type(cost) == int:
             cost = [cost, -cost]
+        else:
+            raise Exception('Penalty (delta_chem) for adding or removing salt "{0}" not recognized'.format(cost))
         # Perform a number of protonation state update trials.
         for attempt in range(nattempts):
             self.attempt_identity_swap(context,penalty=cost,saltmax=saltmax)

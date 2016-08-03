@@ -64,8 +64,7 @@ class MCMCSampler(object):
 
     """
     def __init__(self, system, topology, positions, temperature=300*unit.kelvin, pressure=1*unit.atmospheres, delta_chem=0, mdsteps=2000, saltsteps=0, volsteps = 25,
-        ctype = 'CPU', nkernels=0, nverlet=0, waterName="HOH", cationName='Na+', anionName='Cl-', debug=False):
-
+        ctype = 'CPU', nkernels=0, nverlet=0, propagator = 'GHMC', waterName="HOH", cationName='Na+', anionName='Cl-', debug=False):
 
         self.delta_chem = delta_chem
         self.temperature = temperature
@@ -74,14 +73,23 @@ class MCMCSampler(object):
         self.volsteps = volsteps
         self.saltsteps = saltsteps
 
+        proplist = ['GHMC','velocityVerlet']
+        if propagator not in proplist:
+            raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
+
         # Setting the integrator:
         if saltsteps is not None:
             self.integrator = openmm.CompoundIntegrator()
-            self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 0.002*unit.picoseconds))
-            self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(1.0*unit.femtoseconds))
+            self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds))
+            if propagator=='GHMC':
+                self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 1.0*unit.femtoseconds))
+            elif propagator=='velocityVerlet':
+                self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(1.0*unit.femtoseconds))
+            else:
+                raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
             self.integrator.setCurrentIntegrator(0)
         else:
-            self.integrator = integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 0.002*unit.picoseconds)
+            self.integrator = integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds)
 
         # Setting the barostat:
         if pressure is not None:
@@ -101,7 +109,7 @@ class MCMCSampler(object):
 
         # Initialising the saltswap object
         self.saltswap = SaltSwap(system=system,topology=topology,temperature=temperature, delta_chem=delta_chem,integrator=self.integrator,pressure=pressure,
-                                 nkernels=nkernels, nverlet_steps=nverlet, waterName=waterName, cationName=cationName, anionName=anionName, debug=debug)
+                                 nkernels=nkernels, nverlet_steps=nverlet, propagator = propagator, waterName=waterName, cationName=cationName, anionName=anionName, debug=debug)
 
     def gen_config(self,mdsteps=None):
         """
@@ -159,10 +167,10 @@ class SaltSAMS(MCMCSampler):
         DOI: 10.1080/10618600.2015.111397
     """
     def __init__(self,system, topology, positions, temperature=300*unit.kelvin, pressure=1*unit.atmospheres, delta_chem=0, mdsteps=1000, saltsteps=1, volsteps = 25,
-        ctype = 'CPU', nkernels=0, nverlet=0, niterations=1000, burnin=100,b=0.7, saltmax = 50):
+        ctype = 'CPU', nkernels=0, nverlet=0, propagator = 'GHMC', niterations=1000, burnin=100,b=0.7, saltmax = 50):
 
         super(SaltSAMS, self).__init__(system=system, topology=topology, positions=positions, temperature=temperature, pressure=pressure, delta_chem=delta_chem, mdsteps=mdsteps, saltsteps=saltsteps, volsteps = volsteps,
-        ctype = ctype, nkernels=nkernels, nverlet=nverlet)
+        ctype = ctype, nkernels=nkernels, nverlet=nverlet,propagator = propagator)
 
         self.burnin = burnin
         self.b = b
