@@ -517,8 +517,7 @@ class SaltSwap(object):
                 # Propagation
                 self.integrator.step(nsteps)
         else:
-            print('Fatal: Propagator not recognized')
-            work = 0
+            raise Exception('Propagator "{0}" not recognized'.format(propagator))
 
         self.integrator.setCurrentIntegrator(0)
 
