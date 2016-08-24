@@ -35,7 +35,7 @@ if __name__ == "__main__":
         ctype = 'CPU'
 
     # Creating the test system
-    wbox = WaterBox(box_edge=size,nonbondedMethod=app.PME)
+    wbox = WaterBox(box_edge=size,cutoff=9*unit.angstrom,nonbondedMethod=app.PME)
 
     # Initialize the class that can sample over MD and salt-water exchanges.
     sampler = MCMCSampler(wbox.system, wbox.topology, wbox.positions, temperature=temperature, pressure=pressure, nkernels=args.npert,
