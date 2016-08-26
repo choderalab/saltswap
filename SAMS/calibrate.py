@@ -42,7 +42,7 @@ import math
 import random
 import numpy as np
 import sys
-sys.path.append("../saltswap/")
+sys.path.append("/Users/rossg/Work/saltswap/saltswap")
 from saltswap import SaltSwap
 
 import simtk.openmm as openmm
