@@ -64,7 +64,7 @@ class MCMCSampler(object):
 
     """
     def __init__(self, system, topology, positions, temperature=300*unit.kelvin, pressure=1*unit.atmospheres, delta_chem=0, mdsteps=2000, saltsteps=0, volsteps = 25,
-        ctype = 'CPU', nkernels=0, nverlet=0, propagator = 'GHMC', waterName="HOH", cationName='Na+', anionName='Cl-', debug=False):
+        ctype = 'CPU', npert=0, nprop=0, propagator = 'GHMC', waterName="HOH", cationName='Na+', anionName='Cl-', debug=False):
 
         self.delta_chem = delta_chem
         self.temperature = temperature
@@ -109,7 +109,7 @@ class MCMCSampler(object):
 
         # Initialising the saltswap object
         self.saltswap = SaltSwap(system=system,topology=topology,temperature=temperature, delta_chem=delta_chem,integrator=self.integrator,pressure=pressure,
-                                 nkernels=nkernels, nverlet_steps=nverlet, propagator = propagator, waterName=waterName, cationName=cationName, anionName=anionName, debug=debug)
+                                 npert=npert, nprop=nprop, propagator = propagator, waterName=waterName, cationName=cationName, anionName=anionName, debug=debug)
 
     def gen_config(self,mdsteps=None):
         """
@@ -167,10 +167,10 @@ class SaltSAMS(MCMCSampler):
         DOI: 10.1080/10618600.2015.111397
     """
     def __init__(self,system, topology, positions, temperature=300*unit.kelvin, pressure=1*unit.atmospheres, delta_chem=0, mdsteps=1000, saltsteps=1, volsteps = 25,
-        ctype = 'CPU', nkernels=0, nverlet=0, propagator = 'GHMC', niterations=1000, burnin=100,b=0.7, saltmax = 50):
+        ctype = 'CPU', npert=0, nprop=0, propagator = 'GHMC', niterations=1000, burnin=100,b=0.7, saltmax = 50):
 
         super(SaltSAMS, self).__init__(system=system, topology=topology, positions=positions, temperature=temperature, pressure=pressure, delta_chem=delta_chem, mdsteps=mdsteps, saltsteps=saltsteps, volsteps = volsteps,
-        ctype = ctype, nkernels=nkernels, nverlet=nverlet,propagator = propagator)
+        ctype = ctype, npert=npert, nprop=nprop,propagator = propagator)
 
         self.burnin = burnin
         self.b = b

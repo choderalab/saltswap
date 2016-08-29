@@ -38,8 +38,8 @@ if __name__ == "__main__":
     wbox = WaterBox(box_edge=size,nonbondedMethod=app.PME,cutoff=9*unit.angstrom,ewaldErrorTolerance=1E-6)
 
     # Initialize the class that can sample over MD and salt-water exchanges.
-    sampler = MCMCSampler(wbox.system, wbox.topology, wbox.positions, temperature=temperature, pressure=pressure, nkernels=args.npert,
-                          nverlet=args.nprop, propagator=args.propagator, delta_chem=delta_chem, mdsteps=args.steps, saltsteps=args.attempts, ctype=ctype)
+    sampler = MCMCSampler(wbox.system, wbox.topology, wbox.positions, temperature=temperature, pressure=pressure, npert=args.npert,
+                          nprop=args.nprop, propagator=args.propagator, delta_chem=delta_chem, mdsteps=args.steps, saltsteps=args.attempts, ctype=ctype)
 
     # Thermalize
     sampler.gen_config(mdsteps=args.equilibration)

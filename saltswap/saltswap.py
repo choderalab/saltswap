@@ -48,9 +48,9 @@ import sys
 import math
 import random
 import numpy as np
-import simtk.openmm as openmm
+#import simtk.openmm as openmm
 import simtk.unit as units
-from openmmtools.integrators import VelocityVerletIntegrator
+#from openmmtools.integrators import VelocityVerletIntegrator
 
 # MODULE CONSTANTS
 kB = units.BOLTZMANN_CONSTANT_kB * units.AVOGADRO_CONSTANT_NA
@@ -65,7 +65,7 @@ class SaltSwap(object):
     """
 
     def __init__(self, system, topology, temperature, delta_chem, integrator, pressure=None, nattempts_per_update=50, debug=False,
-        nkernels=1, nverlet_steps=0, propagator='GHMC', waterName="HOH", cationName='Na+', anionName='Cl-'):
+        npert=1, nprop=0, propagator='GHMC', waterName="HOH", cationName='Na+', anionName='Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
 
@@ -85,10 +85,10 @@ class SaltSwap(object):
             For explicit solvent simulations, the pressure.
         debug : bool, optional, default=False
             Turn debug information on/off.
-        nkernels : integer, optional, default=0
-            Number of steps per NCMC switching trial, or 1 if instantaneous Monte Carlo is to be used.
-        nverlet_steps : integer
-            Number of velocity verlet steps to take in each NCMC iteration
+        npert : integer
+            Number of NCMC perturbation kernels. Set to 1 for instantaneous switching
+        nprop : integer
+            Number of propagation kernels (MD steps) per NCMC perturbation kernel. Set to 0 for instantaneous switching
         ncmc_timestep : simtk.unit.Quantity with units compatible with femtoseconds
             Timestep to use for NCMC switching
         waterName = str, optional, default='HOH'
@@ -122,13 +122,13 @@ class SaltSwap(object):
         proplist = ['GHMC','velocityVerlet']
         if propagator in ['GHMC','velocityVerlet']:
             self.propagator = propagator
-        elif propagator not in ['GHMC','velocityVerlet'] and nkernels==0:
+        elif propagator not in ['GHMC','velocityVerlet'] and npert==0:
             pass
         else:
             raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
 
-        self.nkernels  = nkernels
-        self.nverlet_steps = nverlet_steps
+        self.npert  = npert
+        self.nprop = nprop
 
         # Set constraint tolerance.
         #self.verlet_integrator.setConstraintTolerance(integrator.getConstraintTolerance())
@@ -156,6 +156,11 @@ class SaltSwap(object):
         self.cation_parameters = self.initializeIonParameters(ion_name=self.cationName,ion_params=None)
         self.anion_parameters = self.initializeIonParameters(ion_name=self.anionName,ion_params=None)
 
+        # Setting the perturbation pathway for NCMC
+        self.set_parampath()
+
+
+
         # Describing the identities of water and ions with numpy vectors
 
         # Track simulation state
@@ -179,6 +184,40 @@ class SaltSwap(object):
         # For counting the number of NaNs I get in NCMC. These are automatically rejected.
         self.nan = 0
         return
+
+    def set_parampath(self):
+
+        # DONE: initialzie arrays to store param paths
+        # DONE: check params with old function
+        # TODO: Ensure correct sampling with null swap test script
+        # TODO: After checks, no need to calculate and save parameters outside this function. Make funcitons below private
+        # TODO: Change if statement in attempt_identity_swap so that instantaneous swaps only occur for nprop=0
+
+        wat_params = self.retrieveResidueParameters(self.topology,self.waterName)
+        cat_params = self.initializeIonParameters(ion_name=self.cationName,ion_params=None)
+        an_params = self.initializeIonParameters(ion_name=self.anionName,ion_params=None)
+
+        # Pre-assigment of the data structures to store the perturbation path
+        self.wat2cat_parampath = []
+        self.wat2an_parampath = []
+        self.cat2wat_parampath = []
+        self.an2wat_parampath = []
+        for atm_ind in range(len(wat_params)):
+            self.wat2cat_parampath.append({'charge':[], 'sigma':[], 'epsilon':[]})
+            self.wat2an_parampath.append({'charge':[], 'sigma':[], 'epsilon':[]})
+            self.cat2wat_parampath.append({'charge':[], 'sigma':[], 'epsilon':[]})
+            self.an2wat_parampath.append({'charge':[], 'sigma':[], 'epsilon':[]})
+
+        # For each atom in the water model (indexed by atm_ind), the parameters are linearly interpolated between the ions.
+        # Both the forward and reverse directions (ie wat2cat and cat2wat) are calculated to save time at each NCMC perturbation
+        for n in range(self.npert):
+            fraction = float(n + 1)/float(self.npert)
+            for atm_ind in range(len(wat_params)):
+                for type in ['charge','sigma','epsilon']:
+                    self.wat2cat_parampath[atm_ind][type].append((1-fraction)*wat_params[atm_ind][type] + fraction*cat_params[atm_ind][type])
+                    self.wat2an_parampath[atm_ind][type].append((1-fraction)*wat_params[atm_ind][type] + fraction*an_params[atm_ind][type])
+                    self.an2wat_parampath[atm_ind][type].append((1-fraction)*an_params[atm_ind][type] + fraction*wat_params[atm_ind][type])
+                    self.cat2wat_parampath[atm_ind][type].append((1-fraction)*cat_params[atm_ind][type] + fraction*wat_params[atm_ind][type])
 
     def retrieveResidueParameters(self, topology, resname):
         """
@@ -229,6 +268,7 @@ class SaltSwap(object):
         # Creating a list of non-bonded parameters that matches the size of the water model.
         num_wat_atoms = len(self.water_parameters)
 
+        # TODO: set eps to exactly zero to verify bug
         # Initialising dummy atoms to having the smallest float that's not zero, due to a bug
         eps = sys.float_info.epsilon
         ion_param_list = num_wat_atoms*[{'charge': eps*units.elementary_charge,'sigma': eps*units.nanometer,'epsilon':eps*units.kilojoule_per_mole}]
@@ -245,7 +285,7 @@ class SaltSwap(object):
             if ion_params == None:
                 ion_param_list[0] = {'charge': -1.0*units.elementary_charge,'sigma': 0.4477657*units.nanometer,'epsilon':0.0355910*units.kilocalorie_per_mole}
             else:
-                ion_parm_list[0] = ion_params
+                ion_param_list[0] = ion_params
         else:
             raise NameError('Ion name %s does not match known cation or anion name' % ion_name)
 
@@ -364,7 +404,7 @@ class SaltSwap(object):
             self.barostat.setFrequency(0)
 
         # If using NCMC, store initial positions.
-        if self.nverlet_steps > 0:
+        if self.nprop > 0:
             initial_positions = context.getState(getPositions=True).getPositions(asNumpy=True)
             initial_velocities = context.getState(getVelocities=True).getVelocities(asNumpy=True)
 
@@ -406,9 +446,9 @@ class SaltSwap(object):
         #logP_initial, pot1, kin1 = self._compute_log_probability(context)
 
         # Perform perturbation to remove or add salt with NCMC and calculate energies
-        if self.nkernels > 0 and self.nverlet_steps > 0:
+        if self.nprop > 0:
             try:
-                work = self.NCMC(context,self.nkernels,self.nverlet_steps,mode_forward,change_indices,propagator=self.propagator)
+                work = self.NCMC(context,self.npert,self.nprop,mode_forward,change_indices,propagator=self.propagator)
             except Exception as detail:
                 work = 1000000000000.0               # If the simulation explodes during NCMC, reject with high work
                 if detail[0]=='Particle coordinate is nan': self.nan += 1
@@ -443,14 +483,14 @@ class SaltSwap(object):
             # Accept :D
             self.naccepted += 1
             self.setIdentity(mode_forward,change_indices)
-            if self.nverlet_steps > 0:
+            if self.nprop > 0:
                 context.setVelocities(-context.getState(getVelocities=True).getVelocities(asNumpy=True))
         else:
             # Reject :(
             # Revert parameters to their previous value
             self.updateForces_fractional(mode_backward,change_indices,fraction=1.0)
             self.forces_to_update.updateParametersInContext(context)
-            if self.nverlet_steps > 0:
+            if self.nprop > 0:
                 context.setPositions(initial_positions)
                 context.setVelocities(initial_velocities)
 
@@ -458,7 +498,7 @@ class SaltSwap(object):
             self.barostat.setFrequency(self.barofreq)
 
 
-    def NCMC(self,context,nkernels,nsteps,mode,exchange_indices,propagator='GHMC'):
+    def NCMC(self,context,npert,nsteps,mode,exchange_indices,propagator='GHMC'):
         """
         Performs nonequilibrium candidate Monte Carlo for the addition or removal of salt.
         So that the protocol is time symmetric, the protocol is given by
@@ -471,7 +511,7 @@ class SaltSwap(object):
         ----------
         context : simtk.openmm.Context
             The context to update
-        nkernels : integer
+        npert : integer
             The number of NCMC perturbation-propagation kernels to use.
         nsteps : integer
             The number of velocity verlet steps to take in the propagation kernel
@@ -492,9 +532,9 @@ class SaltSwap(object):
             pot_initial= self.getPotEnergy(context)
             # Propagation
             self.integrator.step(nsteps)
-            for k in range(nkernels):
+            for stage in range(npert):
                 # Perturbation
-                fraction = float(k + 1)/float(nkernels)
+                fraction = float(stage + 1)/float(npert)
                 self.updateForces_fractional(mode,exchange_indices,fraction)
                 self.forces_to_update.updateParametersInContext(context)
                 # Propagation
@@ -505,14 +545,23 @@ class SaltSwap(object):
         elif propagator == 'GHMC':
             work = 0    # Unitless work
             self.integrator.step(nsteps)
-            for k in range(nkernels):
+            for stage in range(npert):
                 pot_initial = self.getPotEnergy(context)
                 # Perturbation
-                fraction = float(k + 1)/float(nkernels)
-                self.updateForces_fractional(mode,exchange_indices,fraction)
+                self.updateForces(mode,exchange_indices,stage)
+                #########################################
+                # The old, slow way
+                #fraction = float(stage + 1)/float(npert)
+                #self.updateForces_fractional(mode,exchange_indices,fraction)
+                #########################################
                 self.forces_to_update.updateParametersInContext(context)
                 # Update the accumulated work
                 pot_final = self.getPotEnergy(context)
+                #if debug == True:
+                #    self.updateForces(mode,exchange_indices,stage)
+                #    self.forces_to_update.updateParametersInContext(context)
+                #    test_energy = self.getPotEnergy(context)
+                #    print(pot_final,test_energy)
                 work += (pot_final - pot_initial)
                 # Propagation
                 self.integrator.step(nsteps)
@@ -547,6 +596,47 @@ class SaltSwap(object):
             self.mutable_residues[exchange_indices[1]].name = self.waterName
             self.stateVector[exchange_indices] = 0
 
+
+    def updateForces(self,mode,exchange_indices,stage=0):
+        '''
+        Update the forcefield parameters accoring depending on whether inserting salt or water. For inserting salt,
+        2 water molecules
+
+        Parameters
+        ----------
+        mode : string
+            Whether the supplied indices will be used to 'add salt' or 'remove salt'
+        exchange_indices : numpy array
+            Indices of residues will be converted to cation and anion, or which cation and anion will be turned
+            into 2 water residue.
+        stage : int
+            The index that points to the parameter value
+        Returns
+        -------
+
+        '''
+        # Initialise self.cation_parampath[atm_index][1,stage] and self.anion_parampath[atm_index][1,stage]
+        #        list with 3 elements, each element contains a matrix with 3 rows for each parameter, and columns for the value of each parameter at a given NCMC stage
+
+
+        if mode == 'add salt':
+            molecule1 = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
+            molecule2 = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
+            atm_index = 0
+            for atm1,atm2 in zip(molecule1,molecule2):
+                self.forces_to_update.setParticleParameters(atm1.index,charge=self.wat2cat_parampath[atm_index]['charge'][stage],sigma=self.wat2cat_parampath[atm_index]['sigma'][stage],epsilon=self.wat2cat_parampath[atm_index]['epsilon'][stage])
+                self.forces_to_update.setParticleParameters(atm2.index,charge=self.wat2an_parampath[atm_index]['charge'][stage],sigma=self.wat2an_parampath[atm_index]['sigma'][stage],epsilon=self.wat2an_parampath[atm_index]['epsilon'][stage])
+                atm_index += 1
+        if mode == 'remove salt':
+            molecule1 = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
+            molecule2 = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
+            atm_index = 0
+            for atm1,atm2 in zip(molecule1,molecule2):
+                self.forces_to_update.setParticleParameters(atm1.index,charge=self.cat2wat_parampath[atm_index]['charge'][stage],sigma=self.cat2wat_parampath[atm_index]['sigma'][stage],epsilon=self.cat2wat_parampath[atm_index]['epsilon'][stage])
+                self.forces_to_update.setParticleParameters(atm2.index,charge=self.an2wat_parampath[atm_index]['charge'][stage],sigma=self.an2wat_parampath[atm_index]['sigma'][stage],epsilon=self.an2wat_parampath[atm_index]['epsilon'][stage])
+                atm_index += 1
+
+
     def updateForces_fractional(self,mode,exchange_indices,fraction=1.0):
         '''
         Update the forcefield parameters accoring depending on whether inserting salt or water.
@@ -564,7 +654,7 @@ class SaltSwap(object):
         -------
 
         '''
-        # TODO: Precalculate fractional forcefield parameters. Currently takes approx. 46 seconds per 100000 updates.
+        # Currently takes approx. 46 seconds per 100000 updates.
 
         if mode == 'add salt':
             initial_force = self.water_parameters
