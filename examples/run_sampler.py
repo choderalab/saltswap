@@ -3,8 +3,8 @@ from simtk.openmm import app
 from openmmtools.testsystems import WaterBox
 from datetime import datetime
 import sys
-sys.path.append("/Users/rossg/Work/saltswap/SAMS")
-from calibrate import MCMCSampler
+sys.path.append("/Users/rossg/Work/saltswap/saltswap")
+from mcmc_samplers import MCMCSampler
 
 if __name__ == "__main__":
     import argparse
