@@ -529,9 +529,9 @@ class SaltSwap(object):
             # Get initial energy
             pot_initial = self.getPotEnergy(context)
             # Propagation
-            print('preloop pot_old=',pot_initial)
+            #print('preloop pot_old=',pot_initial)
             self.integrator.step(nprop)
-            print('preloop pot_new=',self.getPotEnergy(context))
+            #print('preloop pot_new=',self.getPotEnergy(context))
             for stage in range(npert):
                 # Perturbation
                 # OLD way
