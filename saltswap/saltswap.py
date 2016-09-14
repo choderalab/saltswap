@@ -56,6 +56,27 @@ import simtk.unit as units
 kB = units.BOLTZMANN_CONSTANT_kB * units.AVOGADRO_CONSTANT_NA
 kB = kB.in_units_of(units.kilojoule_per_mole / units.kelvin)
 
+def strip_in_unit_system(quant, unit_system=units.md_unit_system, compatible_with=None):
+    """Strips the unit from a simtk.units.Quantity object and returns it's value conforming to a unit system
+    Parameters
+    ----------
+    quant : simtk.unit.Quantity
+        object from which units are to be stripped
+    unit_system : simtk.unit.UnitSystem:
+        unit system to which the unit needs to be converted, default is the OpenMM unit system (md_unit_system)
+    compatible_with : simtk.unit.Unit
+        Supply to make sure that the unit is compatible with an expected unit
+    Returns
+    -------
+    quant : object with no units attached
+    """
+    if units.is_quantity(quant):
+        if compatible_with is not None:
+            quant = quant.in_units_of(compatible_with)
+        return quant.value_in_unit_system(unit_system)
+    else:
+        return quant
+
 class SaltSwap(object):
     """
     Monte Carlo driver for semi-grand canonical ensemble moves.
@@ -109,6 +130,7 @@ class SaltSwap(object):
         self.topology = topology
         self.temperature = temperature
         self.kT = self.temperature*kB
+        self.kT_unitless = strip_in_unit_system(kB)*strip_in_unit_system(temperature)      # in units of kJ/mol
         self.pressure = pressure
         self.delta_chem = delta_chem
         self.debug = debug
@@ -189,7 +211,7 @@ class SaltSwap(object):
 
         # DONE: initialzie arrays to store param paths
         # DONE: check params with old function
-        # TODO: Ensure correct sampling with null swap test script
+        # DONE: Ensure correct sampling with null swap test script
         # TODO: After checks, no need to calculate and save parameters outside this function. Make funcitons below private
         # DONE: Change if statement in attempt_identity_swap so that instantaneous swaps only occur for nprop=0
 
@@ -246,7 +268,7 @@ class SaltSwap(object):
                 atoms = [atom for atom in residue.atoms()]
                 for atm in atoms:
                     [charge, sigma, epsilon] = self.forces_to_update.getParticleParameters(atm.index)
-                    parameters = {'charge': charge, 'sigma': sigma, 'epsilon': epsilon}
+                    parameters = {'charge': strip_in_unit_system(charge), 'sigma': strip_in_unit_system(sigma), 'epsilon': strip_in_unit_system(epsilon)}
                     param_list.append(parameters)
                     #if self.debug: print('retrieveResidueParameters: %s : %s' % (resname, str(parameters)))
                 return param_list
@@ -273,20 +295,23 @@ class SaltSwap(object):
 
         # TODO: set eps to exactly zero to verify bug
         # Initialising dummy atoms to having the smallest float that's not zero, due to a bug
-        eps = sys.float_info.epsilon
-        ion_param_list = num_wat_atoms*[{'charge': eps*units.elementary_charge,'sigma': eps*units.nanometer,'epsilon':eps*units.kilojoule_per_mole}]
-
+        #eps = sys.float_info.epsilon
+        eps = 0.0
+        #ion_param_list = num_wat_atoms*[{'charge': eps*units.elementary_charge,'sigma': eps*units.nanometer,'epsilon':eps*units.kilojoule_per_mole}]
+        ion_param_list = num_wat_atoms*[{'charge': eps,'sigma': eps,'epsilon':eps}]
         # Making the first element of list of parameter dictionaries the ion. This means that ions will be centered
         # on the water oxygen atoms.
         # If ion parameters are not supplied, use Joung and Cheatham parameters.
         if ion_name == self.cationName:
             if ion_params == None:
-                ion_param_list[0] = {'charge': 1.0*units.elementary_charge, 'sigma': 0.2439281*units.nanometer, 'epsilon': 0.0874393*units.kilocalorie_per_mole}
+                #ion_param_list[0] = {'charge': 1.0*units.elementary_charge, 'sigma': 0.2439281*units.nanometer, 'epsilon': 0.0874393*units.kilocalorie_per_mole}
+                ion_param_list[0] = {'charge': 1.0, 'sigma': 0.2439281, 'epsilon': 0.0874393}
             else:
                 ion_param_list[0] = ion_params
         elif ion_name == self.anionName:
             if ion_params == None:
-                ion_param_list[0] = {'charge': -1.0*units.elementary_charge,'sigma': 0.4477657*units.nanometer,'epsilon':0.0355910*units.kilocalorie_per_mole}
+                #ion_param_list[0] = {'charge': -1.0*units.elementary_charge,'sigma': 0.4477657*units.nanometer,'epsilon':0.0355910*units.kilocalorie_per_mole}
+                ion_param_list[0] = {'charge': -1.0,'sigma': 0.4477657,'epsilon':0.0355910}
             else:
                 ion_param_list[0] = ion_params
         else:
@@ -427,35 +452,23 @@ class SaltSwap(object):
 
         # Compute initial energy
         #logP_initial, pot1, kin1 = self._compute_log_probability(context)
-
         # Perform perturbation to remove or add salt with NCMC and calculate energies
         if self.nprop > 0:
             try:
                 work = self.NCMC(context,self.npert,self.nprop,mode_forward,change_indices,propagator=self.propagator)
             except Exception as detail:
                 work = 1000000000000.0               # If the simulation explodes during NCMC, reject with high work
-                if detail[0]=='Particle coordinate is nan': self.nan += 1
-            #logP_final, pot2, kin2 = self._compute_log_probability(context)
+                if detail[0]=='Particle coordinate is nan':
+                    self.nan += 1
+                else:
+                    print(detail)
+
         else:
-            # OLD WAY
-            #logP_initial, pot1, kin1 = self._compute_log_probability(context)
-            #self.updateForces_fractional(mode_forward,change_indices,fraction=1.0)
-            #self.forces_to_update.updateParametersInContext(context)
-            #logP_final, pot2, kin2 = self._compute_log_probability(context)
-            #work = logP_initial - logP_final
-            #print('OLD',logP_final, type(logP_final))
-            #######################
-            # NEW WAY
-            #logP_initial, pot1, kin1 = self._compute_log_probability(context)
             pot_initial = self.getPotEnergy(context)
             self.updateForces(mode_forward,change_indices,stage=0)
             self.forces_to_update.updateParametersInContext(context)
             pot_final= self.getPotEnergy(context)
             work = (pot_final - pot_initial)/self.kT
-            #logP_final, pot2, kin2 = self._compute_log_probability(context)
-            #print('NEW',logP_final,type(logP_final))
-            #work = logP_initial - logP_final
-
 
         # Computing the work after velocity Verlet: Work = E_final - E_initial
         #work = logP_initial - logP_final
@@ -526,52 +539,48 @@ class SaltSwap(object):
         """
         self.integrator.setCurrentIntegrator(1)
         if propagator == 'velocityVerlet':
-            # Get initial energy
-            pot_initial = self.getPotEnergy(context)
+            # Get initial total energy
+            logp_initial, pot, kin = self._compute_log_probability(context)
             # Propagation
-            #print('preloop pot_old=',pot_initial)
             self.integrator.step(nprop)
-            #print('preloop pot_new=',self.getPotEnergy(context))
             for stage in range(npert):
                 # Perturbation
-                # OLD way
-                #fraction = float(stage + 1)/float(npert)
-                #self.updateForces_fractional(mode,exchange_indices,fraction)
-                #self.forces_to_update.updateParametersInContext(context)
-                # New way
                 self.updateForces(mode,exchange_indices,stage)
                 self.forces_to_update.updateParametersInContext(context)
                 # Propagation
                 self.integrator.step(nprop)
-            # Get final energy and calculate total work
-            pot_final = self.getPotEnergy(context)
-            work =  (pot_final -  pot_initial)/self.kT
+            # Get final total energy and calculate total work
+            logp_final, pot, kin = self._compute_log_probability(context)
+            work =  logp_initial - logp_final
         elif propagator == 'GHMC':
+            ghmc = self.integrator.getIntegrator(1)
             work = 0    # Unitless work
-            self.integrator.step(nprop)
+            #wrk = 0
+            ghmc.step(nprop)
+            #self.integrator.step(nprop)
             for stage in range(npert):
-                pot_initial = self.getPotEnergy(context)
+                #pot_initial = self.getPotEnergy(context)
+                nrg_initial = ghmc.getGlobalVariableByName('potential_new') #self.integrator.getGlobalVariable(5)
+                #print('initial',pot_initial, nrg_initial)
                 # Perturbation
                 self.updateForces(mode,exchange_indices,stage)
-                #########################################
-                # The old, slow way
-                #fraction = float(stage + 1)/float(npert)
-                #self.updateForces_fractional(mode,exchange_indices,fraction)
-                #########################################
                 self.forces_to_update.updateParametersInContext(context)
                 # Update the accumulated work
                 pot_final = self.getPotEnergy(context)
-                #if debug == True:
-                #    self.updateForces(mode,exchange_indices,stage)
-                #    self.forces_to_update.updateParametersInContext(context)
-                #    test_energy = self.getPotEnergy(context)
-                #    print(pot_final,test_energy)
-                work += (pot_final - pot_initial)/self.kT
+                #work += (pot_final - pot_initial)/self.kT
                 # Propagation
-                self.integrator.step(nprop)
+                #self.integrator.step(nprop)
+                ghmc.step(nprop)
+                #nrg_final = ghmc.getGlobalVariableByName('potential_orig') #self.integrator.getGlobalVariable(6)
+                #wrk += nrg_final - nrg_initial
+                #wrk += (strip_in_unit_system(pot_final) - nrg_initial)/self.kT_unitless
+                work += (strip_in_unit_system(pot_final) - nrg_initial)/self.kT_unitless
+                #print('final',pot_final, nrg_final)
+                #print('work:',work, wrk)
         else:
             raise Exception('Propagator "{0}" not recognized'.format(propagator))
 
+        #print('acceptance rate',ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         self.integrator.setCurrentIntegrator(0)
 
         return work
@@ -627,15 +636,19 @@ class SaltSwap(object):
             molecule1 = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
             molecule2 = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
             atm_index = 0
+            #print(mode)
             for atm1,atm2 in zip(molecule1,molecule2):
+                #print('wat2cat',self.wat2cat_parampath[atm_index]['charge'][stage])
                 self.forces_to_update.setParticleParameters(atm1.index,charge=self.wat2cat_parampath[atm_index]['charge'][stage],sigma=self.wat2cat_parampath[atm_index]['sigma'][stage],epsilon=self.wat2cat_parampath[atm_index]['epsilon'][stage])
                 self.forces_to_update.setParticleParameters(atm2.index,charge=self.wat2an_parampath[atm_index]['charge'][stage],sigma=self.wat2an_parampath[atm_index]['sigma'][stage],epsilon=self.wat2an_parampath[atm_index]['epsilon'][stage])
                 atm_index += 1
         if mode == 'remove salt':
+            #print(mode)
             molecule1 = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
             molecule2 = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
             atm_index = 0
             for atm1,atm2 in zip(molecule1,molecule2):
+                #print('cat2wat',self.wat2cat_parampath[atm_index]['charge'][stage])
                 self.forces_to_update.setParticleParameters(atm1.index,charge=self.cat2wat_parampath[atm_index]['charge'][stage],sigma=self.cat2wat_parampath[atm_index]['sigma'][stage],epsilon=self.cat2wat_parampath[atm_index]['epsilon'][stage])
                 self.forces_to_update.setParticleParameters(atm2.index,charge=self.an2wat_parampath[atm_index]['charge'][stage],sigma=self.an2wat_parampath[atm_index]['sigma'][stage],epsilon=self.an2wat_parampath[atm_index]['epsilon'][stage])
                 atm_index += 1
@@ -724,7 +737,6 @@ class SaltSwap(object):
         state = context.getState(getEnergy=True)
         pot_energy = state.getPotentialEnergy()
         return pot_energy
-
 
     def _compute_log_probability(self, context):
         """

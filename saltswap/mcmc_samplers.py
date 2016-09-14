@@ -41,6 +41,7 @@ import simtk.openmm as openmm
 import simtk.unit as unit
 from openmmtools import integrators
 
+from integrators import GHMCIntegrator
 class MCMCSampler(object):
     """
     Wrapper for MD and saltswap moves.
@@ -74,9 +75,10 @@ class MCMCSampler(object):
             self.integrator = openmm.CompoundIntegrator()
             self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds))
             if propagator=='GHMC':
-                self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 1.0*unit.femtoseconds))
+                #self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 1.0*unit.femtoseconds))
+                self.integrator.addIntegrator(GHMCIntegrator(temperature, 1/unit.picosecond, 1.0*unit.femtoseconds))
             elif propagator=='velocityVerlet':
-                self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(1.0*unit.femtoseconds))
+                self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(1*unit.femtoseconds))
             else:
                 raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
             self.integrator.setCurrentIntegrator(0)
