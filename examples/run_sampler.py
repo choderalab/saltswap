@@ -5,6 +5,7 @@ from datetime import datetime
 import sys
 sys.path.append("/Users/rossg/Work/saltswap/saltswap")
 from mcmc_samplers import MCMCSampler
+import numpy as np
 
 if __name__ == "__main__":
     import argparse
@@ -48,7 +49,7 @@ if __name__ == "__main__":
     f = open(args.data, 'w')
     s = "Niterations = {:4}, Nsteps = {:7}, Nattemps = {:3}, Dchem = {:5}, Nperts = {:5}, Nprops = {:3}\n".format(args.cycles,args.steps,args.attempts,args.deltachem,args.npert,args.nprop)
     f.write(s)
-    s = "\n{:4} {:5} {:5} {:4} {:6}\n".format("Step","Nwats","Nsalt","AccProb","Time (s)")
+    s = "\n{:4} {:5} {:5} {:4} {:9} {:6}\n".format("Step","Nwats","Nsalt","AccProb", "GHMC AccProb","Time (s)")
     f.write(s)
     f.close()
 
@@ -77,8 +78,10 @@ if __name__ == "__main__":
         cnts = sampler.saltswap.getIdentityCounts()
         nrg = sampler.saltswap.getPotEnergy(sampler.context)
         acc = sampler.saltswap.getAcceptanceProbability()
+        ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ghmc))
+        sampler.saltswap.naccepted_ghmc = []
         f = open(args.data, 'a')
-        s = "{:4} {:5} {:5}   {:0.2f} {:4}\n".format(i,cnts[0],cnts[1],round(acc,2),iter_time.seconds)
+        s = "{:4} {:5} {:5}   {:0.2f}      {:0.2f}   {:4}\n".format(i, cnts[0], cnts[1], round(acc,2), round(ghmc_acc,2), iter_time.seconds)
         f.write(s)
         f.close()
         # Saving work data for each of the nattempts and reseting:
