@@ -141,15 +141,15 @@ class SaltSwap(object):
 
         self.integrator = integrator
 
-        proplist = ['GHMC','velocityVerlet']
-        if propagator in ['GHMC','velocityVerlet']:
+        proplist = ['GHMC', 'velocityVerlet']
+        if propagator in ['GHMC', 'velocityVerlet']:
             self.propagator = propagator
-        elif propagator not in ['GHMC','velocityVerlet'] and npert==0:
+        elif propagator not in ['GHMC', 'velocityVerlet'] and npert==0:
             pass
         else:
-            raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
+            raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator, proplist))
 
-        self.npert  = npert
+        self.npert = npert
         self.nprop = nprop
 
         # Set constraint tolerance.
@@ -178,7 +178,11 @@ class SaltSwap(object):
         self.cation_parameters = self.initializeIonParameters(ion_name=self.cationName,ion_params=None)
         self.anion_parameters = self.initializeIonParameters(ion_name=self.anionName,ion_params=None)
 
-        # Setting the perturbation pathway for NCMC
+        # Setting the perturbation pathway for
+        self.wat2cat_parampath = []
+        self.wat2an_parampath = []
+        self.cat2wat_parampath = []
+        self.an2wat_parampath = []
         self.set_parampath()
 
 
@@ -186,8 +190,8 @@ class SaltSwap(object):
         # Describing the identities of water and ions with numpy vectors
 
         # Track simulation state
-        #self.kin_energies = units.Quantity(list(), units.kilocalorie_per_mole)
-        #self.pot_energy = 0*units.kilocalorie_per_mole)
+        # self.kin_energies = units.Quantity(list(), units.kilocalorie_per_mole)
+         #self.pot_energy = 0*units.kilocalorie_per_mole)
 
         # Store list of exceptions that may need to be modified.
         self.nattempts_per_update = nattempts_per_update
@@ -202,31 +206,19 @@ class SaltSwap(object):
         # Saving the work values for adding and removing salt
         self.work_add = []
         self.work_rm = []
-
+        self.naccepted_ghmc = []
         # For counting the number of NaNs I get in NCMC. These are automatically rejected.
         self.nan = 0
         return
 
     def set_parampath(self):
+        # TODO: After checks, no need to calculate and save parameters outside this function.
 
-        # DONE: initialzie arrays to store param paths
-        # DONE: check params with old function
-        # DONE: Ensure correct sampling with null swap test script
-        # TODO: After checks, no need to calculate and save parameters outside this function. Make funcitons below private
-        # DONE: Change if statement in attempt_identity_swap so that instantaneous swaps only occur for nprop=0
-
-        #wat_params = self.retrieveResidueParameters(self.topology,self.waterName)
-        #cat_params = self.initializeIonParameters(ion_name=self.cationName,ion_params=None)
-        #an_params = self.initializeIonParameters(ion_name=self.anionName,ion_params=None)
         wat_params = self.water_parameters
         cat_params = self.cation_parameters
         an_params = self.anion_parameters
 
         # Pre-assigment of the data structures to store the perturbation path
-        self.wat2cat_parampath = []
-        self.wat2an_parampath = []
-        self.cat2wat_parampath = []
-        self.an2wat_parampath = []
         for atm_ind in range(len(wat_params)):
             self.wat2cat_parampath.append({'charge':[], 'sigma':[], 'epsilon':[]})
             self.wat2an_parampath.append({'charge':[], 'sigma':[], 'epsilon':[]})
@@ -298,20 +290,20 @@ class SaltSwap(object):
         #eps = sys.float_info.epsilon
         eps = 0.0
         #ion_param_list = num_wat_atoms*[{'charge': eps*units.elementary_charge,'sigma': eps*units.nanometer,'epsilon':eps*units.kilojoule_per_mole}]
-        ion_param_list = num_wat_atoms*[{'charge': eps,'sigma': eps,'epsilon':eps}]
+        ion_param_list = num_wat_atoms*[{'charge': eps, 'sigma': eps, 'epsilon':eps}]
         # Making the first element of list of parameter dictionaries the ion. This means that ions will be centered
         # on the water oxygen atoms.
         # If ion parameters are not supplied, use Joung and Cheatham parameters.
         if ion_name == self.cationName:
-            if ion_params == None:
+            if ion_params is None:
                 #ion_param_list[0] = {'charge': 1.0*units.elementary_charge, 'sigma': 0.2439281*units.nanometer, 'epsilon': 0.0874393*units.kilocalorie_per_mole}
                 ion_param_list[0] = {'charge': 1.0, 'sigma': 0.2439281, 'epsilon': 0.0874393}
             else:
                 ion_param_list[0] = ion_params
         elif ion_name == self.anionName:
-            if ion_params == None:
+            if ion_params is None:
                 #ion_param_list[0] = {'charge': -1.0*units.elementary_charge,'sigma': 0.4477657*units.nanometer,'epsilon':0.0355910*units.kilocalorie_per_mole}
-                ion_param_list[0] = {'charge': -1.0,'sigma': 0.4477657,'epsilon':0.0355910}
+                ion_param_list[0] = {'charge': -1.0, 'sigma': 0.4477657, 'epsilon':0.0355910}
             else:
                 ion_param_list[0] = ion_params
         else:
@@ -559,28 +551,26 @@ class SaltSwap(object):
             ghmc.step(nprop)
             #self.integrator.step(nprop)
             for stage in range(npert):
-                #pot_initial = self.getPotEnergy(context)
-                nrg_initial = ghmc.getGlobalVariableByName('potential_new') #self.integrator.getGlobalVariable(5)
+                pot_initial = self.getPotEnergy(context)
+                #nrg_initial = ghmc.getGlobalVariableByName('potential_new') #self.integrator.getGlobalVariable(5)
                 #print('initial',pot_initial, nrg_initial)
                 # Perturbation
                 self.updateForces(mode,exchange_indices,stage)
                 self.forces_to_update.updateParametersInContext(context)
                 # Update the accumulated work
                 pot_final = self.getPotEnergy(context)
-                #work += (pot_final - pot_initial)/self.kT
+                work += (pot_final - pot_initial)/self.kT
                 # Propagation
                 #self.integrator.step(nprop)
                 ghmc.step(nprop)
-                #nrg_final = ghmc.getGlobalVariableByName('potential_orig') #self.integrator.getGlobalVariable(6)
-                #wrk += nrg_final - nrg_initial
-                #wrk += (strip_in_unit_system(pot_final) - nrg_initial)/self.kT_unitless
-                work += (strip_in_unit_system(pot_final) - nrg_initial)/self.kT_unitless
+                #nrg_final = ghmc.getGlobalVariableByName('potential_initial') #self.integrator.getGlobalVariable(6)
+                #wrk += (nrg_final - nrg_initial)/self.kT_unitless
                 #print('final',pot_final, nrg_final)
                 #print('work:',work, wrk)
         else:
             raise Exception('Propagator "{0}" not recognized'.format(propagator))
 
-        #print('acceptance rate',ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
+        self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         self.integrator.setCurrentIntegrator(0)
 
         return work
@@ -631,24 +621,19 @@ class SaltSwap(object):
         # Initialise self.cation_parampath[atm_index][1,stage] and self.anion_parampath[atm_index][1,stage]
         #        list with 3 elements, each element contains a matrix with 3 rows for each parameter, and columns for the value of each parameter at a given NCMC stage
 
-
         if mode == 'add salt':
             molecule1 = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
             molecule2 = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
             atm_index = 0
-            #print(mode)
             for atm1,atm2 in zip(molecule1,molecule2):
-                #print('wat2cat',self.wat2cat_parampath[atm_index]['charge'][stage])
                 self.forces_to_update.setParticleParameters(atm1.index,charge=self.wat2cat_parampath[atm_index]['charge'][stage],sigma=self.wat2cat_parampath[atm_index]['sigma'][stage],epsilon=self.wat2cat_parampath[atm_index]['epsilon'][stage])
                 self.forces_to_update.setParticleParameters(atm2.index,charge=self.wat2an_parampath[atm_index]['charge'][stage],sigma=self.wat2an_parampath[atm_index]['sigma'][stage],epsilon=self.wat2an_parampath[atm_index]['epsilon'][stage])
                 atm_index += 1
         if mode == 'remove salt':
-            #print(mode)
             molecule1 = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
             molecule2 = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
             atm_index = 0
             for atm1,atm2 in zip(molecule1,molecule2):
-                #print('cat2wat',self.wat2cat_parampath[atm_index]['charge'][stage])
                 self.forces_to_update.setParticleParameters(atm1.index,charge=self.cat2wat_parampath[atm_index]['charge'][stage],sigma=self.cat2wat_parampath[atm_index]['sigma'][stage],epsilon=self.cat2wat_parampath[atm_index]['epsilon'][stage])
                 self.forces_to_update.setParticleParameters(atm2.index,charge=self.an2wat_parampath[atm_index]['charge'][stage],sigma=self.an2wat_parampath[atm_index]['sigma'][stage],epsilon=self.an2wat_parampath[atm_index]['epsilon'][stage])
                 atm_index += 1

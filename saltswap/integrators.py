@@ -11,7 +11,7 @@ class GHMCIntegrator(mm.CustomIntegrator):
 
     """
 
-    def __init__(self, temperature=298.0 * simtk.unit.kelvin, collision_rate=91.0 / simtk.unit.picoseconds, timestep=1.0 * simtk.unit.femtoseconds):
+    def __init__(self, temperature=298.0 * simtk.unit.kelvin, collision_rate=1.0 / simtk.unit.picoseconds, timestep=1.0 * simtk.unit.femtoseconds, nsteps=5):
         """
         Create a generalized hybrid Monte Carlo (GHMC) integrator.
 
@@ -72,6 +72,7 @@ class GHMCIntegrator(mm.CustomIntegrator):
         self.addPerDofVariable("xold", 0)  # old positions
         self.addGlobalVariable("Eold", 0)  # old energy
         self.addGlobalVariable("Enew", 0)  # new energy
+        self.addGlobalVariable("potential_initial", 0)  # initial potential energy
         self.addGlobalVariable("potential_old", 0)  # old potential energy
         self.addGlobalVariable("potential_new", 0)  # new potential energy
         self.addGlobalVariable("accept", 0)  # accept or reject
@@ -93,46 +94,49 @@ class GHMCIntegrator(mm.CustomIntegrator):
         #
         self.addUpdateContextState()
 
-        #
-        # Velocity randomization
-        #
-        self.addComputePerDof("v", "sqrt(b)*v + sqrt(1-b)*sigma*gaussian")
-        self.addConstrainVelocities()
+        self.addComputeGlobal("potential_initial", "energy")
+        for step in range(nsteps):
+            #
+            # Velocity randomization
+            #
+            self.addComputePerDof("v", "sqrt(b)*v + sqrt(1-b)*sigma*gaussian")
+            self.addConstrainVelocities()
 
-        # Compute initial total energy
-        self.addComputeSum("ke", "0.5*m*v*v")
-        self.addComputeGlobal("potential_old", "energy")
-        self.addComputeGlobal("Eold", "ke + potential_old")
-        self.addComputePerDof("xold", "x")
-        self.addComputePerDof("vold", "v")
-        # Velocity Verlet step
-        self.addComputePerDof("v", "v + 0.5*dt*f/m")
-        self.addComputePerDof("x", "x + v*dt")
-        self.addComputePerDof("x1", "x")
-        self.addConstrainPositions()
-        self.addComputePerDof("v", "v + 0.5*dt*f/m + (x-x1)/dt")
-        self.addConstrainVelocities()
-        # Compute final total energy
-        self.addComputeSum("ke", "0.5*m*v*v")
-        self.addComputeGlobal("potential_new", "energy")
-        self.addComputeGlobal("Enew", "ke + potential_new")
-        # Accept/reject, ensuring rejection if energy is NaN
-        self.addComputeGlobal("accept", "step(exp(-(Enew-Eold)/kT) - uniform)")
-        self.beginIfBlock("accept != 1")
-        self.addComputePerDof("x", "xold")
-        self.addComputePerDof("v", "-vold")
-        self.addComputeGlobal("potential_new", "potential_old")
-        self.endBlock()
+            # Compute initial total energy
+            self.addComputeSum("ke", "0.5*m*v*v")
+            self.addComputeGlobal("potential_old", "energy")
+            self.addComputeGlobal("Eold", "ke + potential_old")
+            self.addComputePerDof("xold", "x")
+            self.addComputePerDof("vold", "v")
+            # Velocity Verlet step
+            self.addComputePerDof("v", "v + 0.5*dt*f/m")
+            self.addComputePerDof("x", "x + v*dt")
+            self.addComputePerDof("x1", "x")
+            self.addConstrainPositions()
+            self.addComputePerDof("v", "v + 0.5*dt*f/m + (x-x1)/dt")
+            self.addConstrainVelocities()
+            # Compute final total energy
+            self.addComputeSum("ke", "0.5*m*v*v")
+            self.addComputeGlobal("potential_new", "energy")
+            self.addComputeGlobal("Enew", "ke + potential_new")
+            # Accept/reject, ensuring rejection if energy is NaN
+            self.addComputeGlobal("accept", "step(exp(-(Enew-Eold)/kT) - uniform)")
+            self.beginIfBlock("accept != 1")
+            self.addComputePerDof("x", "xold")
+            self.addComputePerDof("v", "-vold")
+            self.addComputeGlobal("potential_new", "potential_old")
+            self.endBlock()
+            #
+            # Velocity randomization
+            #
+            self.addComputePerDof("v", "sqrt(b)*v + sqrt(1-b)*sigma*gaussian")
+            self.addConstrainVelocities()
+            #
+            # Accumulate statistics.
+            #
+            self.addComputeGlobal("naccept", "naccept + accept")
+            self.addComputeGlobal("ntrials", "ntrials + 1")
 
-        #
-        # Velocity randomization
-        #
-        self.addComputePerDof("v", "sqrt(b)*v + sqrt(1-b)*sigma*gaussian")
-        self.addConstrainVelocities()
 
-        #
-        # Accumulate statistics.
-        #
-        self.addComputeGlobal("naccept", "naccept + accept")
-        self.addComputeGlobal("ntrials", "ntrials + 1")
-        self.addComputeGlobal("potential_new", "energy")
+
+
