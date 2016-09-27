@@ -3,13 +3,12 @@
 
 
 """
-Self adjusted mixture sampling for the SaltSwap class.
 
 Description
 -----------
 
-Sampling the (semi) grand canonical distribution over the numbers of salt pairs.
-
+Objects to sample moves from SaltSwap and molecular dynamics. Includes an MCMC sampler class inspired by choderalab/openmmmcmc.
+Includes a basic sampler for adjusted mixture sampling for the SaltSwap class.
 
 Notes
 -----
@@ -24,11 +23,10 @@ References
 Examples
 --------
 
-Coming soon to an interpreter near you!
-
-TODO
-----
-    * Write the code
+from openmmtools.testsystems import WaterBox
+wbox = WaterBox(box_edge=20,nonbondedMethod=app.PME)
+sampler = MCMCSampler(wbox.system,wbox.topology,wbox.positions,delta_chem=710)
+sampler.multimove(1000)
 
 Copyright and license
 ---------------------
@@ -37,18 +35,13 @@ Copyright and license
 
 """
 
-import sys
-import math
-import random
 import numpy as np
-import sys
-sys.path.append("/Users/rossg/Work/saltswap/saltswap")
 from saltswap import SaltSwap
-
 import simtk.openmm as openmm
 import simtk.unit as unit
 from openmmtools import integrators
 
+from integrators import GHMCIntegrator
 class MCMCSampler(object):
     """
     Wrapper for MD and saltswap moves.
@@ -64,7 +57,7 @@ class MCMCSampler(object):
 
     """
     def __init__(self, system, topology, positions, temperature=300*unit.kelvin, pressure=1*unit.atmospheres, delta_chem=0, mdsteps=2000, saltsteps=0, volsteps = 25,
-        ctype = 'CPU', npert=0, nprop=0, propagator = 'GHMC', waterName="HOH", cationName='Na+', anionName='Cl-', debug=False):
+        ctype = 'CPU', npert=1, nprop=0, propagator = 'GHMC', waterName="HOH", cationName='Na+', anionName='Cl-', debug=False):
 
         self.delta_chem = delta_chem
         self.temperature = temperature
@@ -78,13 +71,14 @@ class MCMCSampler(object):
             raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
 
         # Setting the integrator:
-        if saltsteps is not None:
+        if saltsteps !=0 and nprop != 0:
             self.integrator = openmm.CompoundIntegrator()
-            self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds))
+            self.integrator.addIntegrator(openmm.LangevinIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds))
             if propagator=='GHMC':
-                self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 1.0*unit.femtoseconds))
+                self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 0.1*unit.femtoseconds))
+                #self.integrator.addIntegrator(GHMCIntegrator(temperature, 1/unit.picosecond, 0.1*unit.femtoseconds, nsteps=nprop))
             elif propagator=='velocityVerlet':
-                self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(1.0*unit.femtoseconds))
+                self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(0.1*unit.femtoseconds))
             else:
                 raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
             self.integrator.setCurrentIntegrator(0)
