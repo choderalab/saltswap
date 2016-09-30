@@ -185,8 +185,6 @@ class SaltSwap(object):
         self.an2wat_parampath = []
         self.set_parampath()
 
-
-
         # Describing the identities of water and ions with numpy vectors
 
         # Track simulation state
@@ -289,20 +287,17 @@ class SaltSwap(object):
         # Initialising dummy atoms to having the smallest float that's not zero, due to a bug
         #eps = sys.float_info.epsilon
         eps = 0.0
-        #ion_param_list = num_wat_atoms*[{'charge': eps*units.elementary_charge,'sigma': eps*units.nanometer,'epsilon':eps*units.kilojoule_per_mole}]
         ion_param_list = num_wat_atoms*[{'charge': eps, 'sigma': eps, 'epsilon':eps}]
         # Making the first element of list of parameter dictionaries the ion. This means that ions will be centered
         # on the water oxygen atoms.
         # If ion parameters are not supplied, use Joung and Cheatham parameters.
         if ion_name == self.cationName:
             if ion_params is None:
-                #ion_param_list[0] = {'charge': 1.0*units.elementary_charge, 'sigma': 0.2439281*units.nanometer, 'epsilon': 0.0874393*units.kilocalorie_per_mole}
                 ion_param_list[0] = {'charge': 1.0, 'sigma': 0.2439281, 'epsilon': 0.0874393}
             else:
                 ion_param_list[0] = ion_params
         elif ion_name == self.anionName:
             if ion_params is None:
-                #ion_param_list[0] = {'charge': -1.0*units.elementary_charge,'sigma': 0.4477657*units.nanometer,'epsilon':0.0355910*units.kilocalorie_per_mole}
                 ion_param_list[0] = {'charge': -1.0, 'sigma': 0.4477657, 'epsilon':0.0355910}
             else:
                 ion_param_list[0] = ion_params
@@ -405,8 +400,8 @@ class SaltSwap(object):
 
         # If using NCMC, store initial positions.
         if self.nprop > 0:
-            initial_positions = context.getState(getPositions=True).getPositions(asNumpy=True)
-            initial_velocities = context.getState(getVelocities=True).getVelocities(asNumpy=True)
+            initial_positions = context.getState(getPositions=True).getPositions()
+            initial_velocities = context.getState(getVelocities=True).getVelocities()
 
         # Introducing a maximum capacity of salt molecules for the 'self adjusted mixture sampling calibration.
         if saltmax == None:
@@ -501,7 +496,7 @@ class SaltSwap(object):
             self.barostat.setFrequency(self.barofreq)
 
 
-    def NCMC(self,context,npert,nprop,mode,exchange_indices,propagator='GHMC'):
+    def NCMC(self,context, npert, nprop, mode, exchange_indices, propagator='GHMC'):
         """
         Performs nonequilibrium candidate Monte Carlo for the addition or removal of salt.
         So that the protocol is time symmetric, the protocol is given by
@@ -514,14 +509,16 @@ class SaltSwap(object):
         ----------
         context : simtk.openmm.Context
             The context to update
-        npert : integer
+        npert : int
             The number of NCMC perturbation-propagation kernels to use.
-        nsteps : integer
-            The number of velocity verlet steps to take in the propagation kernel
+        nprop : int
+            The number of propagation steps per perturbation kernel
         mode : string
             Either 'add salt' or 'remove  salt'
         exchange_indices : numpy array
             Two element vector containing the residue indices that have been changed
+        propagator : str
+            The name of propagator.
 
         Returns
         -------
@@ -546,27 +543,20 @@ class SaltSwap(object):
             work =  logp_initial - logp_final
         elif propagator == 'GHMC':
             ghmc = self.integrator.getIntegrator(1)
-            work = 0    # Unitless work
-            #wrk = 0
-            ghmc.step(nprop)
-            #self.integrator.step(nprop)
+            work = 0.0    # Unitless work
+            # Propagation
+            ghmc.step(1)
             for stage in range(npert):
-                pot_initial = self.getPotEnergy(context)
-                #nrg_initial = ghmc.getGlobalVariableByName('potential_new') #self.integrator.getGlobalVariable(5)
-                #print('initial',pot_initial, nrg_initial)
+                pot_initial = ghmc.getGlobalVariableByName('potential_new') #self.integrator.getGlobalVariable(5)
                 # Perturbation
                 self.updateForces(mode,exchange_indices,stage)
                 self.forces_to_update.updateParametersInContext(context)
-                # Update the accumulated work
-                pot_final = self.getPotEnergy(context)
-                work += (pot_final - pot_initial)/self.kT
                 # Propagation
-                #self.integrator.step(nprop)
-                ghmc.step(nprop)
-                #nrg_final = ghmc.getGlobalVariableByName('potential_initial') #self.integrator.getGlobalVariable(6)
-                #wrk += (nrg_final - nrg_initial)/self.kT_unitless
-                #print('final',pot_final, nrg_final)
-                #print('work:',work, wrk)
+                ghmc.step(1)
+                # Get the potential energy before the steps were taken.
+                pot_final = ghmc.getGlobalVariableByName('potential_initial')
+                # Update the accumulated work
+                work += (pot_final - pot_initial)/self.kT_unitless
         else:
             raise Exception('Propagator "{0}" not recognized'.format(propagator))
 

@@ -7,11 +7,14 @@ kB = units.BOLTZMANN_CONSTANT_kB * units.AVOGADRO_CONSTANT_NA
 class GHMCIntegrator(mm.CustomIntegrator):
 
     """
-    Generalized hybrid Monte Carlo (GHMC) integrator.
+
+    This generalized hybrid Monte Carlo (GHMC) integrator is a modification of the GHMC integrator found
+    here https://github.com/choderalab/openmmtools. Multiple steps can be taken per integrator.step() in order to save
+    the potential energy before the steps were made.
 
     """
 
-    def __init__(self, temperature=298.0 * simtk.unit.kelvin, collision_rate=1.0 / simtk.unit.picoseconds, timestep=1.0 * simtk.unit.femtoseconds, nsteps=5):
+    def __init__(self, temperature=298.0 * simtk.unit.kelvin, collision_rate=1.0 / simtk.unit.picoseconds, timestep=1.0 * simtk.unit.femtoseconds, nsteps=1):
         """
         Create a generalized hybrid Monte Carlo (GHMC) integrator.
 
@@ -23,14 +26,15 @@ class GHMCIntegrator(mm.CustomIntegrator):
            The collision rate.
         timestep : simtk.unit.Quantity compatible with femtoseconds, default: 1.0*unit.femtoseconds
            The integration timestep.
+        nsteps : int
+           The number of steps to take per integrator.step()
 
         Notes
         -----
-        This integrator is equivalent to a Langevin integrator in the velocity Verlet discretization with a
+        It is equivalent to a Langevin integrator in the velocity Verlet discretization with a
         Metrpolization step to ensure sampling from the appropriate distribution.
 
-        Additional global variables 'ntrials' and  'naccept' keep track of how many trials have been attempted and
-        accepted, respectively.
+        An additional global variable 'potential_initial' records the potential energy before 'nsteps' have been taken.
 
         TODO
         ----

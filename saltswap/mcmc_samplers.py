@@ -56,8 +56,8 @@ class MCMCSampler(object):
     ----------
 
     """
-    def __init__(self, system, topology, positions, temperature=300*unit.kelvin, pressure=1*unit.atmospheres, delta_chem=0, mdsteps=2000, saltsteps=0, volsteps = 25,
-        ctype = 'CPU', npert=1, nprop=0, propagator = 'GHMC', waterName="HOH", cationName='Na+', anionName='Cl-', debug=False):
+    def __init__(self, system, topology, positions, temperature = 300*unit.kelvin, pressure = 1*unit.atmospheres, delta_chem = 0, mdsteps = 2000, saltsteps = 0, volsteps = 25,
+        ctype = 'CPU', npert = 1, nprop = 0, timestep = 1.0*unit.femtoseconds, propagator = 'GHMC', waterName = "HOH", cationName = 'Na+', anionName = 'Cl-', debug = False):
 
         self.delta_chem = delta_chem
         self.temperature = temperature
@@ -70,20 +70,19 @@ class MCMCSampler(object):
         if propagator not in proplist:
             raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
 
-        # Setting the integrator:
+        # Setting the compound integrator:
         if saltsteps !=0 and nprop != 0:
             self.integrator = openmm.CompoundIntegrator()
             self.integrator.addIntegrator(openmm.LangevinIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds))
             if propagator=='GHMC':
-                self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 0.1*unit.femtoseconds))
-                #self.integrator.addIntegrator(GHMCIntegrator(temperature, 1/unit.picosecond, 0.1*unit.femtoseconds, nsteps=nprop))
+                self.integrator.addIntegrator(GHMCIntegrator(temperature, 1/unit.picosecond, timestep, nsteps=nprop))
             elif propagator=='velocityVerlet':
                 self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(0.1*unit.femtoseconds))
             else:
                 raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
             self.integrator.setCurrentIntegrator(0)
         else:
-            self.integrator = integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds)
+            self.integrator = openmm.LangevinIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds)
 
         # Setting the barostat:
         if pressure is not None:
@@ -107,7 +106,12 @@ class MCMCSampler(object):
 
     def gen_config(self,mdsteps=None):
         """
-        Generate a configuration via one of OpenMM's integrators
+        Generate a configuration via one of OpenMM's integrators, and volume move with a frequency as specified in self.barostat.
+
+        Parameters
+        ----------
+        mdsteps : int
+            The number of MD steps to take
 
         """
         self.integrator.setCurrentIntegrator(0)
@@ -120,6 +124,13 @@ class MCMCSampler(object):
     def gen_label(self,saltsteps=None,delta_chem=None):
         """
         Generate a new number of salt molecules via SaltSwap's code
+
+        Parameters
+        ----------
+        saltsteps : int
+            The number of salt insertion/deletion attempts
+        delta_chem : float
+            The difference in chemical potential between salt and 2 water molecules
 
         """
         if delta_chem == None:
@@ -134,8 +145,16 @@ class MCMCSampler(object):
 
     def move(self,mdsteps=None,saltsteps=None,delta_chem=None):
         """
-        Generate a move composed of configuration, pressure, and saltswap
+        Generate a move composed of configuration, volume, and salt insertion/deletion attempts
 
+        Parameters
+        ----------
+        mdsteps : int
+            The number of MD steps to take
+        saltsteps : int
+            The number of salt insertion/deletion attempts
+        delta_chem : float
+            The difference in chemical potential between salt and 2 water molecules
         """
         self.gen_config(mdsteps)
         self.gen_label(saltsteps,delta_chem)
@@ -143,8 +162,18 @@ class MCMCSampler(object):
 
     def multimove(self,nmoves=10,mdsteps=None,saltsteps=None,delta_chem=None):
         """
-        Generate a many moves over the sampling dimentions.
+        Generate a many moves over the sampling dimensions.
 
+        Parameters
+        ----------
+        nmoves : int
+            The number of iterations combination moves
+        mdsteps : int
+            The number of MD steps to take
+        saltsteps : int
+            The number of salt insertion/deletion attempts
+        delta_chem : float
+            The difference in chemical potential between salt and 2 water molecules
         """
         for i in range(nmoves):
             self.move(mdsteps,saltsteps,delta_chem)
