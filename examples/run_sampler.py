@@ -26,7 +26,7 @@ if __name__ == "__main__":
 
 
     # Setting the parameters of the simulation
-    size = 20.0*unit.angstrom     # The length of the edges of the water box.
+    size = 25.0*unit.angstrom     # The length of the edges of the water box.
     temperature = 300*unit.kelvin
     pressure = 1*unit.atmospheres
     delta_chem = args.deltachem*unit.kilojoule_per_mole
@@ -37,7 +37,7 @@ if __name__ == "__main__":
         ctype = 'CPU'
 
     # Creating the test system, with non-bonded switching function and lower than standard PME error tolerance
-    wbox = WaterBox(box_edge=size,nonbondedMethod=app.PME,cutoff=9*unit.angstrom,ewaldErrorTolerance=1E-6)
+    wbox = WaterBox(box_edge=size,nonbondedMethod=app.PME,cutoff=9*unit.angstrom,ewaldErrorTolerance=1E-5)
 
     # Initialize the class that can sample over MD and salt-water exchanges.
     timestep = args.timestep*unit.femtoseconds
@@ -69,6 +69,13 @@ if __name__ == "__main__":
     f.write(s)
     f.close()
 
+    # Open PDB file for writing.
+    pdbname = 'traj.pdb'
+    pdbfile = open(pdbname, 'w')
+    app.PDBFile.writeHeader(wbox.topology, file=pdbfile)
+    app.PDBFile.writeModel(wbox.topology, wbox.positions, file=pdbfile, modelIndex=0)
+    pdbfile.close()
+
     iterations = args.cycles          # Number of rounds of MD and constant salt moves
     # Running simulation
     startTime = datetime.now()
@@ -98,6 +105,11 @@ if __name__ == "__main__":
             f.write("\n")
             f.close()
             sampler.saltswap.work_rm=[]
+        pdbfile = open(pdbname, 'a')
+        positions = sampler.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions(asNumpy=True)
+        app.PDBFile.writeModel(wbox.topology, positions, file=pdbfile, modelIndex=i+1)
+        pdbfile.close()
+
     tm = datetime.now() - startTime
 
     f = open(args.data, 'a')
