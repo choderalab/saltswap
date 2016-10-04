@@ -86,7 +86,10 @@ if __name__ == "__main__":
         # Saving acceptance probability data:
         cnts = sampler.saltswap.getIdentityCounts()
         acc = sampler.saltswap.getAcceptanceProbability()
-        ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ghmc))
+        if args.propagator == 'GHMC':
+            ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ghmc))
+        else:
+            ghmc_acc = 0
         sampler.saltswap.naccepted_ghmc = []
         f = open(args.data, 'a')
         s = "{:4} {:5} {:5}   {:0.2f}      {:0.2f}   {:4}\n".format(i, cnts[0], cnts[1], round(acc,2), round(ghmc_acc,2), iter_time.seconds)
@@ -113,5 +116,7 @@ if __name__ == "__main__":
     tm = datetime.now() - startTime
 
     f = open(args.data, 'a')
-    s = "\nElapsed time in seconds = {:7}\n".format(tm.seconds)
+    s = "\nElapsed time in seconds = {:7}".format(tm.seconds)
+    f.write(s)
+    s = "\nNumber of NaNs = {:3}\n".format(sampler.saltswap.nan)
     f.write(s)
