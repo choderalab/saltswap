@@ -77,7 +77,7 @@ class MCMCSampler(object):
             if propagator=='GHMC':
                 self.integrator.addIntegrator(GHMCIntegrator(temperature, 1/unit.picosecond, timestep, nsteps=nprop))
             elif propagator=='velocityVerlet':
-                self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(0.1*unit.femtoseconds))
+                self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(timestep*unit.femtoseconds))
             else:
                 raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
             self.integrator.setCurrentIntegrator(0)

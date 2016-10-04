@@ -113,5 +113,5 @@ if __name__ == "__main__":
     tm = datetime.now() - startTime
 
     f = open(args.data, 'a')
-    s = "\nElapsed time in seconds = {:7}".format(tm.seconds)
+    s = "\nElapsed time in seconds = {:7}\n".format(tm.seconds)
     f.write(s)
