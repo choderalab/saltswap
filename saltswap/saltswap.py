@@ -260,12 +260,11 @@ class SaltSwap(object):
                     [charge, sigma, epsilon] = self.forces_to_update.getParticleParameters(atm.index)
                     parameters = {'charge': strip_in_unit_system(charge), 'sigma': strip_in_unit_system(sigma), 'epsilon': strip_in_unit_system(epsilon)}
                     param_list.append(parameters)
-                    #if self.debug: print('retrieveResidueParameters: %s : %s' % (resname, str(parameters)))
                 return param_list
         raise Exception("resname '%s' not found in topology" % resname)
 
     def initializeIonParameters(self,ion_name,ion_params=None):
-        '''
+        """
         Initialize the set of ion non-bonded parameters so that they match the number of atoms of the water model.
 
         Parameters
@@ -278,7 +277,7 @@ class SaltSwap(object):
             NonbondedForce parameter dict ('charge', 'sigma', 'epsilon') for ion.
         Returns
         -------
-        '''
+        """
 
         # Creating a list of non-bonded parameters that matches the size of the water model.
         num_wat_atoms = len(self.water_parameters)
@@ -321,11 +320,6 @@ class SaltSwap(object):
         -------
         water_residues : list of simtk.openmm.app.Residue
             Water residues.
-
-        TODO
-        ----
-        * Can this feature be added to simt.openmm.app.Topology?
-
         """
         target_residues = list()
         for residue in topology.residues():
@@ -336,7 +330,7 @@ class SaltSwap(object):
         return target_residues
 
     def initializeStateVector(self):
-        '''
+        """
         Stores the identity of the mutabable residues in a numpy array for efficient seaching and updating of
         residue identies.
 
@@ -345,7 +339,7 @@ class SaltSwap(object):
         stateVector : numpy array
             Array of 0s, 1s, and 2s to indicate water, sodium, and chlorine.
 
-        '''
+        """
         names = [res.name for res in self.mutable_residues]
         stateVector = np.zeros(len(names))
         for i in range(len(names)):
@@ -485,7 +479,7 @@ class SaltSwap(object):
         else:
             # Reject :(
             # Revert parameters to their previous value
-            self.updateForces(mode_backward,change_indices,stage=0)
+            self.updateForces(mode_backward,change_indices,stage=self.npert-1)
             #self.updateForces_fractional(mode_backward,change_indices,fraction=1.0)
             self.forces_to_update.updateParametersInContext(context)
             if self.nprop > 0:
@@ -557,10 +551,9 @@ class SaltSwap(object):
                 pot_final = ghmc.getGlobalVariableByName('potential_initial')
                 # Update the accumulated work
                 work += (pot_final - pot_initial)/self.kT_unitless
+            self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         else:
             raise Exception('Propagator "{0}" not recognized'.format(propagator))
-
-        self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         self.integrator.setCurrentIntegrator(0)
 
         return work
