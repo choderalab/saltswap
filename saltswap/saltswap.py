@@ -443,7 +443,6 @@ class SaltSwap(object):
                     self.nan += 1
                 else:
                     print(detail)
-
         else:
             pot_initial = self.getPotEnergy(context)
             self.updateForces(mode_forward,change_indices,stage=0)
@@ -552,6 +551,23 @@ class SaltSwap(object):
                 # Update the accumulated work
                 work += (pot_final - pot_initial)/self.kT_unitless
             self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
+        elif propagator == 'GHMC_old':
+            ghmc = self.integrator.getIntegrator(1)
+            work = 0.0    # Unitless work
+            # Propagation
+            ghmc.step(nprop)
+            for stage in range(npert):
+                pot_initial = self.getPotEnergy(context)
+                # Perturbation
+                self.updateForces(mode,exchange_indices,stage)
+                self.forces_to_update.updateParametersInContext(context)
+                # Propagation
+                ghmc.step(nprop)
+                # Get the potential energy before the steps were taken.
+                pot_final = self.getPotEnergy(context)
+                # Update the accumulated work
+                work += (pot_final - pot_initial)/self.kT
+                self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         else:
             raise Exception('Propagator "{0}" not recognized'.format(propagator))
         self.integrator.setCurrentIntegrator(0)

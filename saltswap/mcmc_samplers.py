@@ -74,8 +74,10 @@ class MCMCSampler(object):
         if saltsteps !=0 and nprop != 0:
             self.integrator = openmm.CompoundIntegrator()
             self.integrator.addIntegrator(openmm.LangevinIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds))
-            if propagator=='GHMC':
+            if propagator == 'GHMC':
                 self.integrator.addIntegrator(GHMCIntegrator(temperature, 1/unit.picosecond, timestep, nsteps=nprop))
+            elif propagator == 'GHMC_old':
+                self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, timestep))
             elif propagator=='velocityVerlet':
                 self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(timestep*unit.femtoseconds))
             else:
