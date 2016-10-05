@@ -43,14 +43,15 @@ ntrials = 10
 force = wbox.system.getForce(2)       # Non-bonded force.
 
 # Turning the first water molecule into Na+. The second water molecule into Cl-
-run = False
+run = True
 if run == True:
+    print('Running saltswap test')
     vv.step(1)     # propagation
     for n in range(ntrials):
         # Get the energy BEFORE the parameters are perturbed.
         state = context.getState(getEnergy=True)
-        potential_old = state.getPotentialEnergy()/unit.kilojoule_per_mole
-        print('old',potential_old)
+        energy_old = (state.getPotentialEnergy() + state.getPotentialEnergy())/unit.kilojoule_per_mole
+        print('old',energy_old)
          # Perturbation
         fraction = 1 - float(n + 1)/ntrials
 
@@ -69,8 +70,8 @@ if run == True:
         vv.step(1)
 
         state = context.getState(getEnergy=True)
-        potential_new = state.getPotentialEnergy()/unit.kilojoule_per_mole
-        print('new',potential_new)
+        energy_new = (state.getPotentialEnergy() + state.getPotentialEnergy())/unit.kilojoule_per_mole
+        print('new',energy_new)
     # Reseting the parameters
     force.setParticleParameters(0,charge=-0.834,sigma=0.3150752406575124*fraction,epsilon=0.635968*fraction)
     force.setParticleParameters(1,charge=0.417,sigma=0,epsilon=1)
@@ -83,12 +84,13 @@ if run == True:
 # Decoupling the first water molecule
 run = True
 if run == True:
+    print('Running water decoupling test')
     vv.step(1)     # propagation
     for n in range(ntrials):
         # Get the energy BEFORE the parameters are perturbed.
         state = context.getState(getEnergy=True)
-        potential_old = state.getPotentialEnergy()/unit.kilojoule_per_mole
-        print('old',potential_old)
+        energy_old = (state.getPotentialEnergy() + state.getPotentialEnergy())/unit.kilojoule_per_mole
+        print('old',energy_old)
          # Perturbation
         fraction = 1 - float(n + 1)/ntrials
 
@@ -99,8 +101,8 @@ if run == True:
 
         vv.step(1)
         state = context.getState(getEnergy=True)
-        potential_new = state.getPotentialEnergy()/unit.kilojoule_per_mole
-        print('new',potential_new)
+        state = context.getState(getEnergy=True)
+        energy_new = (state.getPotentialEnergy() + state.getPotentialEnergy())/unit.kilojoule_per_mole
     force.setParticleParameters(0,charge=-0.834,sigma=0.3150752406575124*fraction,epsilon=0.635968*fraction)
     force.setParticleParameters(1,charge=0.417,sigma=0,epsilon=1)
     force.setParticleParameters(2,charge=0.417,sigma=0,epsilon=1)
