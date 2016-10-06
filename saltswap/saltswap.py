@@ -141,10 +141,10 @@ class SaltSwap(object):
 
         self.integrator = integrator
 
-        proplist = ['GHMC', 'velocityVerlet']
-        if propagator in ['GHMC', 'velocityVerlet']:
+        proplist = ['GHMC', 'GHMC_old', 'velocityVerlet']
+        if propagator in proplist:
             self.propagator = propagator
-        elif propagator not in ['GHMC', 'velocityVerlet'] and npert==0:
+        elif propagator not in proplist and npert==0:
             pass
         else:
             raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator, proplist))
@@ -184,8 +184,6 @@ class SaltSwap(object):
         self.cat2wat_parampath = []
         self.an2wat_parampath = []
         self.set_parampath()
-
-
 
         # Describing the identities of water and ions with numpy vectors
 
@@ -262,12 +260,11 @@ class SaltSwap(object):
                     [charge, sigma, epsilon] = self.forces_to_update.getParticleParameters(atm.index)
                     parameters = {'charge': strip_in_unit_system(charge), 'sigma': strip_in_unit_system(sigma), 'epsilon': strip_in_unit_system(epsilon)}
                     param_list.append(parameters)
-                    #if self.debug: print('retrieveResidueParameters: %s : %s' % (resname, str(parameters)))
                 return param_list
         raise Exception("resname '%s' not found in topology" % resname)
 
     def initializeIonParameters(self,ion_name,ion_params=None):
-        '''
+        """
         Initialize the set of ion non-bonded parameters so that they match the number of atoms of the water model.
 
         Parameters
@@ -280,7 +277,7 @@ class SaltSwap(object):
             NonbondedForce parameter dict ('charge', 'sigma', 'epsilon') for ion.
         Returns
         -------
-        '''
+        """
 
         # Creating a list of non-bonded parameters that matches the size of the water model.
         num_wat_atoms = len(self.water_parameters)
@@ -289,20 +286,17 @@ class SaltSwap(object):
         # Initialising dummy atoms to having the smallest float that's not zero, due to a bug
         #eps = sys.float_info.epsilon
         eps = 0.0
-        #ion_param_list = num_wat_atoms*[{'charge': eps*units.elementary_charge,'sigma': eps*units.nanometer,'epsilon':eps*units.kilojoule_per_mole}]
         ion_param_list = num_wat_atoms*[{'charge': eps, 'sigma': eps, 'epsilon':eps}]
         # Making the first element of list of parameter dictionaries the ion. This means that ions will be centered
         # on the water oxygen atoms.
         # If ion parameters are not supplied, use Joung and Cheatham parameters.
         if ion_name == self.cationName:
             if ion_params is None:
-                #ion_param_list[0] = {'charge': 1.0*units.elementary_charge, 'sigma': 0.2439281*units.nanometer, 'epsilon': 0.0874393*units.kilocalorie_per_mole}
                 ion_param_list[0] = {'charge': 1.0, 'sigma': 0.2439281, 'epsilon': 0.0874393}
             else:
                 ion_param_list[0] = ion_params
         elif ion_name == self.anionName:
             if ion_params is None:
-                #ion_param_list[0] = {'charge': -1.0*units.elementary_charge,'sigma': 0.4477657*units.nanometer,'epsilon':0.0355910*units.kilocalorie_per_mole}
                 ion_param_list[0] = {'charge': -1.0, 'sigma': 0.4477657, 'epsilon':0.0355910}
             else:
                 ion_param_list[0] = ion_params
@@ -326,11 +320,6 @@ class SaltSwap(object):
         -------
         water_residues : list of simtk.openmm.app.Residue
             Water residues.
-
-        TODO
-        ----
-        * Can this feature be added to simt.openmm.app.Topology?
-
         """
         target_residues = list()
         for residue in topology.residues():
@@ -341,7 +330,7 @@ class SaltSwap(object):
         return target_residues
 
     def initializeStateVector(self):
-        '''
+        """
         Stores the identity of the mutabable residues in a numpy array for efficient seaching and updating of
         residue identies.
 
@@ -350,7 +339,7 @@ class SaltSwap(object):
         stateVector : numpy array
             Array of 0s, 1s, and 2s to indicate water, sodium, and chlorine.
 
-        '''
+        """
         names = [res.name for res in self.mutable_residues]
         stateVector = np.zeros(len(names))
         for i in range(len(names)):
@@ -405,8 +394,8 @@ class SaltSwap(object):
 
         # If using NCMC, store initial positions.
         if self.nprop > 0:
-            initial_positions = context.getState(getPositions=True).getPositions(asNumpy=True)
-            initial_velocities = context.getState(getVelocities=True).getVelocities(asNumpy=True)
+            initial_positions = context.getState(getPositions=True).getPositions()
+            initial_velocities = context.getState(getVelocities=True).getVelocities()
 
         # Introducing a maximum capacity of salt molecules for the 'self adjusted mixture sampling calibration.
         if saltmax == None:
@@ -454,7 +443,6 @@ class SaltSwap(object):
                     self.nan += 1
                 else:
                     print(detail)
-
         else:
             pot_initial = self.getPotEnergy(context)
             self.updateForces(mode_forward,change_indices,stage=0)
@@ -490,7 +478,7 @@ class SaltSwap(object):
         else:
             # Reject :(
             # Revert parameters to their previous value
-            self.updateForces(mode_backward,change_indices,stage=0)
+            self.updateForces(mode_backward,change_indices,stage=self.npert-1)
             #self.updateForces_fractional(mode_backward,change_indices,fraction=1.0)
             self.forces_to_update.updateParametersInContext(context)
             if self.nprop > 0:
@@ -501,7 +489,7 @@ class SaltSwap(object):
             self.barostat.setFrequency(self.barofreq)
 
 
-    def NCMC(self,context,npert,nprop,mode,exchange_indices,propagator='GHMC'):
+    def NCMC(self,context, npert, nprop, mode, exchange_indices, propagator='GHMC'):
         """
         Performs nonequilibrium candidate Monte Carlo for the addition or removal of salt.
         So that the protocol is time symmetric, the protocol is given by
@@ -514,19 +502,21 @@ class SaltSwap(object):
         ----------
         context : simtk.openmm.Context
             The context to update
-        npert : integer
+        npert : int
             The number of NCMC perturbation-propagation kernels to use.
-        nsteps : integer
-            The number of velocity verlet steps to take in the propagation kernel
+        nprop : int
+            The number of propagation steps per perturbation kernel
         mode : string
             Either 'add salt' or 'remove  salt'
         exchange_indices : numpy array
             Two element vector containing the residue indices that have been changed
+        propagator : str
+            The name of propagator.
 
         Returns
         -------
-        work: simtk.unit
-            The work for appropriate for the stated propagator
+        work: float
+            The work for appropriate for the stated propagator in units of KT.
 
         """
         self.integrator.setCurrentIntegrator(1)
@@ -546,31 +536,40 @@ class SaltSwap(object):
             work =  logp_initial - logp_final
         elif propagator == 'GHMC':
             ghmc = self.integrator.getIntegrator(1)
-            work = 0    # Unitless work
-            #wrk = 0
-            ghmc.step(nprop)
-            #self.integrator.step(nprop)
+            work = 0.0    # Unitless work
+            # Propagation
+            ghmc.step(1)
             for stage in range(npert):
-                pot_initial = self.getPotEnergy(context)
-                #nrg_initial = ghmc.getGlobalVariableByName('potential_new') #self.integrator.getGlobalVariable(5)
-                #print('initial',pot_initial, nrg_initial)
+                pot_initial = ghmc.getGlobalVariableByName('potential_new') #self.integrator.getGlobalVariable(5)
                 # Perturbation
                 self.updateForces(mode,exchange_indices,stage)
                 self.forces_to_update.updateParametersInContext(context)
-                # Update the accumulated work
-                pot_final = self.getPotEnergy(context)
-                work += (pot_final - pot_initial)/self.kT
                 # Propagation
-                #self.integrator.step(nprop)
+                ghmc.step(1)
+                # Get the potential energy before the steps were taken.
+                pot_final = ghmc.getGlobalVariableByName('potential_initial')
+                # Update the accumulated work
+                work += (pot_final - pot_initial)/self.kT_unitless
+            self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
+        elif propagator == 'GHMC_old':
+            ghmc = self.integrator.getIntegrator(1)
+            work = 0.0    # Unitless work
+            # Propagation
+            ghmc.step(nprop)
+            for stage in range(npert):
+                pot_initial = self.getPotEnergy(context)
+                # Perturbation
+                self.updateForces(mode,exchange_indices,stage)
+                self.forces_to_update.updateParametersInContext(context)
+                # Propagation
                 ghmc.step(nprop)
-                #nrg_final = ghmc.getGlobalVariableByName('potential_initial') #self.integrator.getGlobalVariable(6)
-                #wrk += (nrg_final - nrg_initial)/self.kT_unitless
-                #print('final',pot_final, nrg_final)
-                #print('work:',work, wrk)
+                # Get the potential energy before the steps were taken.
+                pot_final = self.getPotEnergy(context)
+                # Update the accumulated work
+                work += (pot_final - pot_initial)/self.kT
+                self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         else:
             raise Exception('Propagator "{0}" not recognized'.format(propagator))
-
-        self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         self.integrator.setCurrentIntegrator(0)
 
         return work

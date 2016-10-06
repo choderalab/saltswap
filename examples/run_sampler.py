@@ -19,13 +19,14 @@ if __name__ == "__main__":
     parser.add_argument('-e','--equilibration',type=int,help="the number of equilibration steps, default=1000",default=1000)
     parser.add_argument('--npert',type=int,help="the number of NCMC perturbation kernels, default=1000",default=1000)
     parser.add_argument('--nprop',type=int,help="the number of propagation kernels per perturbation, default=1",default=1)
+    parser.add_argument('--timestep',type=float,help='the NCMC propagator timstep in femtoseconds, default=1.0',default=1.0)
     parser.add_argument('--propagator',type=str,help="the type integrator used for propagation in NCMC, default=GHMC",default='GHMC')
     parser.add_argument("--gpu",action='store_true',help="whether the simulation will be run on a GPU, default=False",default=False)
     args = parser.parse_args()
 
 
     # Setting the parameters of the simulation
-    size = 20.0*unit.angstrom     # The length of the edges of the water box.
+    size = 25.0*unit.angstrom     # The length of the edges of the water box.
     temperature = 300*unit.kelvin
     pressure = 1*unit.atmospheres
     delta_chem = args.deltachem*unit.kilojoule_per_mole
@@ -36,11 +37,12 @@ if __name__ == "__main__":
         ctype = 'CPU'
 
     # Creating the test system, with non-bonded switching function and lower than standard PME error tolerance
-    wbox = WaterBox(box_edge=size,nonbondedMethod=app.PME,cutoff=9*unit.angstrom,ewaldErrorTolerance=1E-6)
+    wbox = WaterBox(box_edge=size,nonbondedMethod=app.PME,cutoff=9*unit.angstrom,ewaldErrorTolerance=1E-5)
 
     # Initialize the class that can sample over MD and salt-water exchanges.
+    timestep = args.timestep*unit.femtoseconds
     sampler = MCMCSampler(wbox.system, wbox.topology, wbox.positions, temperature=temperature, pressure=pressure, npert=args.npert,
-                          nprop=args.nprop, propagator=args.propagator, delta_chem=delta_chem, mdsteps=args.steps, saltsteps=args.attempts, ctype=ctype)
+                          nprop=args.nprop, propagator=args.propagator, timestep = timestep, delta_chem=delta_chem, mdsteps=args.steps, saltsteps=args.attempts, ctype=ctype)
 
     # Thermalize
     sampler.gen_config(mdsteps=args.equilibration)
@@ -67,6 +69,13 @@ if __name__ == "__main__":
     f.write(s)
     f.close()
 
+    # Open PDB file for writing.
+    pdbname = 'traj.pdb'
+    pdbfile = open(pdbname, 'w')
+    app.PDBFile.writeHeader(wbox.topology, file=pdbfile)
+    app.PDBFile.writeModel(wbox.topology, wbox.positions, file=pdbfile, modelIndex=0)
+    pdbfile.close()
+
     iterations = args.cycles          # Number of rounds of MD and constant salt moves
     # Running simulation
     startTime = datetime.now()
@@ -76,9 +85,11 @@ if __name__ == "__main__":
         iter_time = datetime.now() - iter_start
         # Saving acceptance probability data:
         cnts = sampler.saltswap.getIdentityCounts()
-        nrg = sampler.saltswap.getPotEnergy(sampler.context)
         acc = sampler.saltswap.getAcceptanceProbability()
-        ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ghmc))
+        if args.propagator == 'GHMC':
+            ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ghmc))
+        else:
+            ghmc_acc = 0
         sampler.saltswap.naccepted_ghmc = []
         f = open(args.data, 'a')
         s = "{:4} {:5} {:5}   {:0.2f}      {:0.2f}   {:4}\n".format(i, cnts[0], cnts[1], round(acc,2), round(ghmc_acc,2), iter_time.seconds)
@@ -97,6 +108,11 @@ if __name__ == "__main__":
             f.write("\n")
             f.close()
             sampler.saltswap.work_rm=[]
+        pdbfile = open(pdbname, 'a')
+        positions = sampler.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions(asNumpy=True)
+        app.PDBFile.writeModel(wbox.topology, positions, file=pdbfile, modelIndex=i+1)
+        pdbfile.close()
+
     tm = datetime.now() - startTime
 
     f = open(args.data, 'a')
