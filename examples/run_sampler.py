@@ -95,6 +95,9 @@ if __name__ == "__main__":
         s = "{:4} {:5} {:5}   {:0.2f}      {:0.2f}   {:4}\n".format(i, cnts[0], cnts[1], round(acc,2), round(ghmc_acc,2), iter_time.seconds)
         f.write(s)
         f.close()
+	# Reset acceotance saltswap acceptance rate
+	sampler.saltswap.naccepted = 0
+	sampler.saltswap.nattempted = 0
         # Saving work data for each of the nattempts and reseting:
         if len(sampler.saltswap.work_add) >= 0:
             f = open("work_add_"+args.data,"a")
