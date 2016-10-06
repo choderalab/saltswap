@@ -141,10 +141,10 @@ class SaltSwap(object):
 
         self.integrator = integrator
 
-        proplist = ['GHMC', 'velocityVerlet']
-        if propagator in ['GHMC', 'velocityVerlet']:
+        proplist = ['GHMC', 'GHMC_old', 'velocityVerlet']
+        if propagator in proplist:
             self.propagator = propagator
-        elif propagator not in ['GHMC', 'velocityVerlet'] and npert==0:
+        elif propagator not in proplist and npert==0:
             pass
         else:
             raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator, proplist))
@@ -515,8 +515,8 @@ class SaltSwap(object):
 
         Returns
         -------
-        work: simtk.unit
-            The work for appropriate for the stated propagator
+        work: float
+            The work for appropriate for the stated propagator in units of KT.
 
         """
         self.integrator.setCurrentIntegrator(1)
