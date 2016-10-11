@@ -79,7 +79,7 @@ def strip_in_unit_system(quant, unit_system=units.md_unit_system, compatible_wit
 
 class SaltSwap(object):
     """
-    Monte Carlo driver for semi-grand canonical ensemble moves.
+    Monte Carlo driver for semi-grand canonical ensemble of swapping water molecules with ion cation pairs.
 
     Class that allows for particles and/or molecules to change identities and forcefield.
 
@@ -283,8 +283,8 @@ class SaltSwap(object):
         num_wat_atoms = len(self.water_parameters)
 
         # TODO: set eps to exactly zero to verify bug
-        # Initialising dummy atoms to having the smallest float that's not zero, due to a bug
-        #eps = sys.float_info.epsilon
+        # Initialising dummy atoms to have no non-bonded interactions
+        #eps = sys.float_info.epsilon       # the smallest float that's not zero
         eps = 0.0
         ion_param_list = num_wat_atoms*[{'charge': eps, 'sigma': eps, 'epsilon':eps}]
         # Making the first element of list of parameter dictionaries the ion. This means that ions will be centered
@@ -351,14 +351,7 @@ class SaltSwap(object):
 
     def resetStatistics(self):
         """
-        Reset statistics of titration state tracking.
-
-        Todo
-        ----
-
-        * Keep track of more statistics regarding history of individual protonation states.
-        * Keep track of work values for individual trials to use for calibration.
-
+        Reset statistics of insertion/deletion tracking.
         """
 
         self.nattempted = 0
@@ -367,7 +360,7 @@ class SaltSwap(object):
         return
 
     def attempt_identity_swap(self,context,penalty,saltmax=None):
-        '''
+        """
         Attempt the exchange of (possibly multiple) chemical species.
 
         Parameters
@@ -376,14 +369,10 @@ class SaltSwap(object):
             The context to update
         penalty : list floats
             The free energy to add salt (first index) and remove salt (second index)
-        saltmax : float
+        saltmax : int
             The maximum number of salt pairs that you wish to be added. If None, then the maximum number is the
             number of water molecules divided by 2.
-
-        Notes
-        -----
-        Code currently written specifically for exchanging two water molecules for Na and Cl, with generalisation to follow.
-        '''
+        """
         self.nattempted += 1
 
         if type(penalty)==float:
@@ -431,8 +420,6 @@ class SaltSwap(object):
             change_indices = np.array([cation_index,anion_index])
             cost = penalty[1]
 
-        # Compute initial energy
-        #logP_initial, pot1, kin1 = self._compute_log_probability(context)
         # Perform perturbation to remove or add salt with NCMC and calculate energies
         if self.nprop > 0:
             try:
@@ -444,21 +431,20 @@ class SaltSwap(object):
                 else:
                     print(detail)
         else:
+            # TODO: check whether stage parameter is correct
             pot_initial = self.getPotEnergy(context)
-            self.updateForces(mode_forward,change_indices,stage=0)
+            self.updateForces(mode_forward,change_indices,stage=self.npert-1)
             self.forces_to_update.updateParametersInContext(context)
             pot_final= self.getPotEnergy(context)
             work = (pot_final - pot_initial)/self.kT
 
-        # Computing the work after velocity Verlet: Work = E_final - E_initial
-        #work = logP_initial - logP_final
+        # Computing the work (already in units of KT)
         if mode_forward == "remove salt":
             self.work_rm.append(work)
         else:
             self.work_add.append(work)
 
         # Cost = F_final - F_initial, where F_initial is the free energy to have the current number of salt molecules.
-        # log_accept += cost - work
         log_accept += -cost - work
  
         # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
@@ -479,7 +465,7 @@ class SaltSwap(object):
             # Reject :(
             # Revert parameters to their previous value
             self.updateForces(mode_backward,change_indices,stage=self.npert-1)
-            #self.updateForces_fractional(mode_backward,change_indices,fraction=1.0)
+            #self.updateForces_fractional(mode_backward,change_indices,fraction=1.0)    # The old way of reseting parameters
             self.forces_to_update.updateParametersInContext(context)
             if self.nprop > 0:
                 context.setPositions(initial_positions)
@@ -507,7 +493,7 @@ class SaltSwap(object):
         nprop : int
             The number of propagation steps per perturbation kernel
         mode : string
-            Either 'add salt' or 'remove  salt'
+            Either 'add salt' or 'remove  salt', which is passed to 'updateForces'
         exchange_indices : numpy array
             Two element vector containing the residue indices that have been changed
         propagator : str
@@ -521,6 +507,7 @@ class SaltSwap(object):
         """
         self.integrator.setCurrentIntegrator(1)
         if propagator == 'velocityVerlet':
+            vv = self.integrator.getIntegrator(1)
             # Get initial total energy
             logp_initial, pot, kin = self._compute_log_probability(context)
             # Propagation
@@ -530,7 +517,7 @@ class SaltSwap(object):
                 self.updateForces(mode,exchange_indices,stage)
                 self.forces_to_update.updateParametersInContext(context)
                 # Propagation
-                self.integrator.step(nprop)
+                vv.step(nprop)
             # Get final total energy and calculate total work
             logp_final, pot, kin = self._compute_log_probability(context)
             work =  logp_initial - logp_final
@@ -552,22 +539,24 @@ class SaltSwap(object):
                 work += (pot_final - pot_initial)/self.kT_unitless
             self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         elif propagator == 'GHMC_old':
+            # Like the GHMC integrator above, except that energies are calculated with getPotEnergy() for testing and benchmarking
             ghmc = self.integrator.getIntegrator(1)
             work = 0.0    # Unitless work
             # Propagation
             ghmc.step(nprop)
             for stage in range(npert):
+                # Getting the potential energy before the perturbation
                 pot_initial = self.getPotEnergy(context)
                 # Perturbation
                 self.updateForces(mode,exchange_indices,stage)
                 self.forces_to_update.updateParametersInContext(context)
+                # Getting the potential energy after the perturbation
+                pot_final = self.getPotEnergy(context)
                 # Propagation
                 ghmc.step(nprop)
-                # Get the potential energy before the steps were taken.
-                pot_final = self.getPotEnergy(context)
                 # Update the accumulated work
                 work += (pot_final - pot_initial)/self.kT
-                self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
+            self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         else:
             raise Exception('Propagator "{0}" not recognized'.format(propagator))
         self.integrator.setCurrentIntegrator(0)
@@ -575,7 +564,7 @@ class SaltSwap(object):
         return work
 
     def setIdentity(self,mode,exchange_indices):
-        '''
+        """
         Function to set the names of the mutated residues and update the state vector. Called after a transformation
         of the forcefield parameters has been accepted.
 
@@ -586,7 +575,7 @@ class SaltSwap(object):
         exchange_indices : numpy array
             Two element vector containing the residue indices that have been changed
 
-        '''
+        """
 
         if mode == "add salt":
             self.mutable_residues[exchange_indices[0]].name = self.cationName
@@ -600,7 +589,7 @@ class SaltSwap(object):
 
 
     def updateForces(self,mode,exchange_indices,stage=0):
-        '''
+        """
         Update the forcefield parameters accoring depending on whether inserting salt or water. For inserting salt,
         2 water molecules
 
@@ -613,13 +602,8 @@ class SaltSwap(object):
             into 2 water residue.
         stage : int
             The index that points to the parameter value
-        Returns
-        -------
 
-        '''
-        # Initialise self.cation_parampath[atm_index][1,stage] and self.anion_parampath[atm_index][1,stage]
-        #        list with 3 elements, each element contains a matrix with 3 rows for each parameter, and columns for the value of each parameter at a given NCMC stage
-
+        """
         if mode == 'add salt':
             molecule1 = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
             molecule2 = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
@@ -639,7 +623,7 @@ class SaltSwap(object):
 
 
     def updateForces_fractional(self,mode,exchange_indices,fraction=1.0):
-        '''
+        """
         Update the forcefield parameters accoring depending on whether inserting salt or water.
 
         Parameters
@@ -651,10 +635,8 @@ class SaltSwap(object):
             into 2 water residue.
         fraction : float
             The fraction along the salt-water forcefield transformation pathway.
-        Returns
-        -------
 
-        '''
+        """
         # Currently takes approx. 46 seconds per 100000 updates.
 
         if mode == 'add salt':
@@ -706,7 +688,7 @@ class SaltSwap(object):
                 atm_index += 1
 
     def getPotEnergy(self,context):
-        '''
+        """
         Extract the potential energy of the system
 
         Parameters
@@ -717,7 +699,7 @@ class SaltSwap(object):
         -------
         potential energy : qunatity in default unit of energy
 
-        '''
+        """
         state = context.getState(getEnergy=True)
         pot_energy = state.getPotentialEnergy()
         return pot_energy
@@ -740,11 +722,6 @@ class SaltSwap(object):
             potential energy of the current context
         kin_energy : float
             kinetic energy of the current context
-
-        TODO
-        ----
-        * Generalize this to use ThermodynamicState concept of reduced potential (from repex)
-
 
         """
 
@@ -773,10 +750,6 @@ class SaltSwap(object):
             The context to update
         nattempts : integer
             Number of salt insertion and deletion moves to attempt.
-
-        Notes
-        -----
-        The titration state actually present in the given context is not checked; it is assumed the MonteCarloTitration internal state is correct.
 
         """
         if nattempts == None: nattempts = self.nattempts_per_update
@@ -807,15 +780,16 @@ class SaltSwap(object):
         return float(self.naccepted) / float(self.nattempted)
 
     def getIdentityCounts(self):
-        '''
+        """
         Returns the total number of waters, cations, and anions
+
         Returns
         -------
 
         counts : tuple of integers
             The number of waters, cations, and anions respectively
 
-        '''
+        """
         nwats = np.sum(self.stateVector==0)
         ncation = np.sum(self.stateVector==1)
         nanion = np.sum(self.stateVector==2)
