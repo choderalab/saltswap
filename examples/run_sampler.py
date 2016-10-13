@@ -70,8 +70,7 @@ if __name__ == "__main__":
     f.close()
 
     # Open PDB file for writing.
-    pdbname = 'traj.pdb'
-    pdbfile = open(pdbname, 'w')
+    pdbfile = open(args.out, 'w')
     app.PDBFile.writeHeader(wbox.topology, file=pdbfile)
     app.PDBFile.writeModel(wbox.topology, wbox.positions, file=pdbfile, modelIndex=0)
     pdbfile.close()
@@ -86,7 +85,7 @@ if __name__ == "__main__":
         # Saving acceptance probability data:
         cnts = sampler.saltswap.getIdentityCounts()
         acc = sampler.saltswap.getAcceptanceProbability()
-        if args.propagator == 'GHMC':
+        if args.nprop != 0 and args.propagator == 'GHMC':
             ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ghmc))
         else:
             ghmc_acc = 0
@@ -95,9 +94,8 @@ if __name__ == "__main__":
         s = "{:4} {:5} {:5}   {:0.2f}      {:0.2f}   {:4}\n".format(i, cnts[0], cnts[1], round(acc,2), round(ghmc_acc,2), iter_time.seconds)
         f.write(s)
         f.close()
-	# Reset acceotance saltswap acceptance rate
-	sampler.saltswap.naccepted = 0
-	sampler.saltswap.nattempted = 0
+        # Reset acceotance saltswap acceptance rate
+        sampler.saltswap.resetStatistics()
         # Saving work data for each of the nattempts and reseting:
         if len(sampler.saltswap.work_add) >= 0:
             f = open("work_add_"+args.data,"a")
@@ -111,7 +109,7 @@ if __name__ == "__main__":
             f.write("\n")
             f.close()
             sampler.saltswap.work_rm=[]
-        pdbfile = open(pdbname, 'a')
+        pdbfile = open(args.out, 'a')
         positions = sampler.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions(asNumpy=True)
         app.PDBFile.writeModel(wbox.topology, positions, file=pdbfile, modelIndex=i+1)
         pdbfile.close()

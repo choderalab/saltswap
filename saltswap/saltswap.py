@@ -57,7 +57,8 @@ kB = units.BOLTZMANN_CONSTANT_kB * units.AVOGADRO_CONSTANT_NA
 kB = kB.in_units_of(units.kilojoule_per_mole / units.kelvin)
 
 def strip_in_unit_system(quant, unit_system=units.md_unit_system, compatible_with=None):
-    """Strips the unit from a simtk.units.Quantity object and returns it's value conforming to a unit system
+    """
+    Strips the unit from a simtk.units.Quantity object and returns it's value conforming to a unit system
     Parameters
     ----------
     quant : simtk.unit.Quantity

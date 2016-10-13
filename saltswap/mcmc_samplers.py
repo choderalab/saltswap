@@ -65,13 +65,14 @@ class MCMCSampler(object):
         self.mdsteps = mdsteps
         self.volsteps = volsteps
         self.saltsteps = saltsteps
+        self.nprop = nprop
 
         proplist = ['GHMC','GHMC_old','velocityVerlet']
         if propagator not in proplist:
             raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
 
         # Setting the compound integrator:
-        if saltsteps !=0 and nprop != 0:
+        if nprop != 0:
             self.integrator = openmm.CompoundIntegrator()
             self.integrator.addIntegrator(openmm.LangevinIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds))
             if propagator == 'GHMC':
@@ -116,7 +117,8 @@ class MCMCSampler(object):
             The number of MD steps to take
 
         """
-        self.integrator.setCurrentIntegrator(0)
+        if self.nprop !=0:
+            self.integrator.setCurrentIntegrator(0)
         if mdsteps == None:
             self.integrator.step(self.mdsteps)
         else:
@@ -140,6 +142,8 @@ class MCMCSampler(object):
         else:
             cost = delta_chem
 
+        if self.nprop !=0:
+            self.integrator.setCurrentIntegrator(1)
         if saltsteps == None:
             self.saltswap.update(self.context,nattempts=self.saltsteps,cost=cost)
         else:
