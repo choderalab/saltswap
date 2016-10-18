@@ -21,7 +21,7 @@ if __name__ == "__main__":
     parser.add_argument('--nprop',type=int,help="the number of propagation kernels per perturbation, default=1",default=1)
     parser.add_argument('--timestep',type=float,help='the NCMC propagator timstep in femtoseconds, default=1.0',default=1.0)
     parser.add_argument('--propagator',type=str,help="the type integrator used for propagation in NCMC, default=GHMC",default='GHMC')
-    parser.add_argument("--gpu",action='store_true',help="whether the simulation will be run on a GPU, default=False",default=False)
+    parser.add_argument('--ctype', type=str, choices = ['CPU','CUDA','OpenCL'],help="the platform where the simulation will be run, default=CPU",default='CPU')
     args = parser.parse_args()
 
 
@@ -31,18 +31,13 @@ if __name__ == "__main__":
     pressure = 1*unit.atmospheres
     delta_chem = args.deltachem*unit.kilojoule_per_mole
 
-    if args.gpu == True:
-        ctype = 'CUDA'
-    else:
-        ctype = 'CPU'
-
     # Creating the test system, with non-bonded switching function and lower than standard PME error tolerance
     wbox = WaterBox(box_edge=size,nonbondedMethod=app.PME,cutoff=9*unit.angstrom,ewaldErrorTolerance=1E-5)
 
     # Initialize the class that can sample over MD and salt-water exchanges.
     timestep = args.timestep*unit.femtoseconds
     sampler = MCMCSampler(wbox.system, wbox.topology, wbox.positions, temperature=temperature, pressure=pressure, npert=args.npert,
-                          nprop=args.nprop, propagator=args.propagator, timestep = timestep, delta_chem=delta_chem, mdsteps=args.steps, saltsteps=args.attempts, ctype=ctype)
+                          nprop=args.nprop, propagator=args.propagator, timestep = timestep, delta_chem=delta_chem, mdsteps=args.steps, saltsteps=args.attempts, ctype=args.ctype)
 
     # Thermalize
     sampler.gen_config(mdsteps=args.equilibration)
@@ -74,7 +69,6 @@ if __name__ == "__main__":
     app.PDBFile.writeHeader(wbox.topology, file=pdbfile)
     app.PDBFile.writeModel(wbox.topology, wbox.positions, file=pdbfile, modelIndex=0)
     pdbfile.close()
-
     iterations = args.cycles          # Number of rounds of MD and constant salt moves
     # Running simulation
     startTime = datetime.now()
