@@ -527,30 +527,18 @@ class SaltSwap(object):
             work =  logp_initial - logp_final
         elif propagator == 'GHMC':
             ghmc = self.integrator.getIntegrator(1)
-            work_getvar = 0.0    # Unitless work
-            work_getpot = 0.0
+            ghmc.setGlobalVariableByName("ntrials", 0)      # Reset the internally accumulated work
+            ghmc.setGlobalVariableByName("naccept", 0)
             # Propagation
             ghmc.step(1)
-            #work_old = ghmc.getGlobalVariableByName('work') / self.kT_unitless
             for stage in range(npert):
-                pot_initial_getvar = ghmc.getGlobalVariableByName('potential_new') #self.integrator.getGlobalVariable(5)
-                pot_initial_getpot = self.getPotEnergy(context)
                 # Perturbation
                 self.updateForces(mode,exchange_indices,stage)
                 self.forces_to_update.updateParametersInContext(context)
-                pot_final_getpot = self.getPotEnergy(context)
                 # Propagation
                 ghmc.step(1)
-                # Get the potential energy before the steps were taken.
-                pot_final_getvar  = ghmc.getGlobalVariableByName('potential_initial')
-                # Update the accumulated work
-                work_getvar  += (pot_final_getvar  - pot_initial_getvar)/self.kT_unitless
-                work_getpot  += (pot_final_getpot  - pot_initial_getpot)/self.kT
-            #work_ini =  ghmc.getGlobalVariableByName('work')
-            print('Work getGlobal',work_getvar)
-            print('Work getPot',work_getpot)
-            #print('Work integrator',work_ini / self.kT_unitless - work_old)
-            work = work_getpot
+            # Extract the internally calculated work from the integrator
+            work = ghmc.getGlobalVariableByName('work') / self.kT_unitless
             self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         elif propagator == 'GHMC_old':
             # Like the GHMC integrator above, except that energies are calculated with getPotEnergy() for testing and benchmarking

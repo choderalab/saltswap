@@ -73,6 +73,7 @@ class GHMCIntegrator(mm.CustomIntegrator):
         self.addGlobalVariable("potential_initial", 0)  # initial potential energy
         self.addGlobalVariable("potential_old", 0)  # old potential energy
         self.addGlobalVariable("potential_new", 0)  # new potential energy
+        self.addGlobalVariable("work", 0)
         self.addGlobalVariable("accept", 0)  # accept or reject
         self.addGlobalVariable("naccept", 0)  # number accepted
         self.addGlobalVariable("ntrials", 0)  # number of Metropolization trials
@@ -84,8 +85,10 @@ class GHMCIntegrator(mm.CustomIntegrator):
         #
         self.beginIfBlock("ntrials = 0")
         self.addComputePerDof("sigma", "sqrt(kT/m)")
+        self.addComputeGlobal("work", "0.0")
         self.addConstrainPositions()
         self.addConstrainVelocities()
+        self.addComputeGlobal("potential_new", "energy")
         self.endBlock()
 
         #
@@ -95,7 +98,7 @@ class GHMCIntegrator(mm.CustomIntegrator):
 
         self.addComputeGlobal("potential_initial", "energy")
         self.addComputeGlobal("step", "0")
-
+        self.addComputeGlobal("work", "work + (potential_initial - potential_new)")
         if True:
             self.beginWhileBlock("step < nsteps")
             #
