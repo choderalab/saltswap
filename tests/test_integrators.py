@@ -200,8 +200,9 @@ class TestIntegrators():
             final_energy_integrator = ghmc.getGlobalVariableByName('potential_initial') / kT_unitless
             ext_work_integrator += (final_energy_integrator - initial_energy_integrator)
 
-        # Both work estimates should agree.
-        assert ( abs(ext_work_getenergy - ext_work_integrator) < 0.01 )
+        int_work = ghmc.getGlobalVariableByName('work') / kT_unitless     # The work calculated internally by ghmc
+        # All work calculations should agree.
+        assert ( abs(ext_work_getenergy - ext_work_integrator) < 0.01  and abs(ext_work_getenergy - int_work) < 0.01 )
 
     @pytest.mark.skipif(detect_cuda(), reason="CUDA not detected on platform")
     def test_ghmc_integrator_cuda(self):
@@ -259,8 +260,9 @@ class TestIntegrators():
             final_energy_integrator = ghmc.getGlobalVariableByName('potential_initial') / kT_unitless
             ext_work_integrator += (final_energy_integrator - initial_energy_integrator)
 
-        # Both work estimates should agree.
-        assert ( abs(ext_work_getenergy - ext_work_integrator) < 0.01 )
+        int_work = ghmc.getGlobalVariableByName('work') / kT_unitless      # The work calculated internally by ghmc
+        # All work calculations should agree.
+        assert ( abs(ext_work_getenergy - ext_work_integrator) < 0.01  and abs(ext_work_getenergy - int_work) < 0.01 )
 
     @pytest.mark.skipif(detect_opencl(), reason="OpenCL not detected on platform")
     def test_ghmc_integrator_opencl(self):
@@ -318,5 +320,6 @@ class TestIntegrators():
             final_energy_integrator = ghmc.getGlobalVariableByName('potential_initial') / kT_unitless
             ext_work_integrator += (final_energy_integrator - initial_energy_integrator)
 
-        # Both work estimates should agree.
-        assert ( abs(ext_work_getenergy - ext_work_integrator) < 0.01 )
+        int_work = ghmc.getGlobalVariableByName('work') / kT_unitless      # The work calculated internally by ghmc
+        # All work calculations should agree.
+        assert ( abs(ext_work_getenergy - ext_work_integrator) < 0.01  and abs(ext_work_getenergy - int_work) < 0.01 )

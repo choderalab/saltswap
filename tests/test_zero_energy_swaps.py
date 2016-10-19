@@ -1,10 +1,8 @@
+import numpy as np
 from simtk import openmm, unit
 from simtk.openmm import app
 from openmmtools.testsystems import WaterBox
-import sys
-sys.path.append("../saltswap/")
 from mcmc_samplers import MCMCSampler
-import numpy as np
 
 
 class TestZeroEnergySwaps(object):
