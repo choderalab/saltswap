@@ -36,11 +36,6 @@ class GHMCIntegrator(mm.CustomIntegrator):
 
         An additional global variable 'potential_initial' records the potential energy before 'nsteps' have been taken.
 
-        TODO
-        ----
-        * Move initialization of 'sigma' to setting the per-particle variables.
-        * Generalize to use MTS inner integrator.
-
         Examples
         --------
 
@@ -57,7 +52,6 @@ class GHMCIntegrator(mm.CustomIntegrator):
         http://www.amazon.com/Free-Energy-Computations-Mathematical-Perspective/dp/1848162472
 
         """
-
         # Initialize constants.
         kT = kB * temperature
         gamma = collision_rate
@@ -79,18 +73,22 @@ class GHMCIntegrator(mm.CustomIntegrator):
         self.addGlobalVariable("potential_initial", 0)  # initial potential energy
         self.addGlobalVariable("potential_old", 0)  # old potential energy
         self.addGlobalVariable("potential_new", 0)  # new potential energy
+        self.addGlobalVariable("work", 0)
         self.addGlobalVariable("accept", 0)  # accept or reject
         self.addGlobalVariable("naccept", 0)  # number accepted
         self.addGlobalVariable("ntrials", 0)  # number of Metropolization trials
         self.addPerDofVariable("x1", 0)  # position before application of constraints
-
+        self.addGlobalVariable("step", 0) # variable to keep track of number of propagation steps
+        self.addGlobalVariable("nsteps", nsteps)  # The number of iterations per integrator.step(1).
         #
         # Initialization.
         #
         self.beginIfBlock("ntrials = 0")
         self.addComputePerDof("sigma", "sqrt(kT/m)")
+        self.addComputeGlobal("work", "0.0")
         self.addConstrainPositions()
         self.addConstrainVelocities()
+        self.addComputeGlobal("potential_new", "energy")
         self.endBlock()
 
         #
@@ -99,7 +97,10 @@ class GHMCIntegrator(mm.CustomIntegrator):
         self.addUpdateContextState()
 
         self.addComputeGlobal("potential_initial", "energy")
-        for step in range(nsteps):
+        self.addComputeGlobal("step", "0")
+        self.addComputeGlobal("work", "work + (potential_initial - potential_new)")
+        if True:
+            self.beginWhileBlock("step < nsteps")
             #
             # Velocity randomization
             #
@@ -141,6 +142,5 @@ class GHMCIntegrator(mm.CustomIntegrator):
             self.addComputeGlobal("naccept", "naccept + accept")
             self.addComputeGlobal("ntrials", "ntrials + 1")
 
-
-
-
+            self.addComputeGlobal("step", "step+1")
+            self.endBlock()

@@ -67,9 +67,14 @@ class MCMCSampler(object):
         self.saltsteps = saltsteps
         self.nprop = nprop
 
+        # Exceptions
         proplist = ['GHMC','GHMC_old','velocityVerlet']
         if propagator not in proplist:
             raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
+
+        chip_types = ['CUDA', 'OpenCL', 'CPU']
+        if ctype not in chip_types:
+            raise Exception('Processor type "{0}" not recognized. Re-enter --ctype with a selection from {1}.'.format(ctype, chip_types))
 
         # Setting the compound integrator:
         if nprop != 0:
@@ -95,7 +100,12 @@ class MCMCSampler(object):
         # Creating the context:
         if ctype == 'CUDA':
             platform = openmm.Platform.getPlatformByName(ctype)
+            platform.setPropertyDefaultValue('DeterministicForces', 'true')
             properties = {'CudaPrecision': 'mixed'}
+            self.context = openmm.Context(system, self.integrator, platform, properties)
+        elif ctype == 'OpenCL':
+            platform = openmm.Platform.getPlatformByName('OpenCL')
+            properties = {'OpenCLPrecision': 'mixed'}
             self.context = openmm.Context(system, self.integrator, platform, properties)
         else:
             platform = openmm.Platform.getPlatformByName('CPU')

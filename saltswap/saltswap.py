@@ -153,9 +153,6 @@ class SaltSwap(object):
         self.npert = npert
         self.nprop = nprop
 
-        # Set constraint tolerance.
-        #self.verlet_integrator.setConstraintTolerance(integrator.getConstraintTolerance())
-
         # Store force object pointer.
         for force_index in range(system.getNumForces()):
             force = system.getForce(force_index)
@@ -166,8 +163,8 @@ class SaltSwap(object):
         if pressure is not None:
             forces = {system.getForce(index).__class__.__name__: system.getForce(index) for index in range(system.getNumForces())}
             if 'MonteCarloBarostat' not in forces:
-                raise Exception("`pressure` is specified, but `system` object lacks a `MonteCarloBarostat`")
                 self.barofreq = None
+                raise Exception("`pressure` is specified, but `system` object lacks a `MonteCarloBarostat`")
             else:
                 self.barostat = forces['MonteCarloBarostat']
                 self.barofreq = self.barostat.getFrequency()
@@ -180,10 +177,6 @@ class SaltSwap(object):
         self.anion_parameters = self.initializeIonParameters(ion_name=self.anionName,ion_params=None)
 
         # Setting the perturbation pathway for
-        self.wat2cat_parampath = []
-        self.wat2an_parampath = []
-        self.cat2wat_parampath = []
-        self.an2wat_parampath = []
         self.set_parampath()
 
         # Describing the identities of water and ions with numpy vectors
@@ -211,11 +204,21 @@ class SaltSwap(object):
         return
 
     def set_parampath(self):
-        # TODO: After checks, no need to calculate and save parameters outside this function.
+        """
+        Produce a linear interpolation between the nonbonded forcefield parameters of water and ion parameters.
+        The linear interpolation serves as a path for NCMC.
+
+        """
 
         wat_params = self.water_parameters
         cat_params = self.cation_parameters
         an_params = self.anion_parameters
+
+        self.wat2cat_parampath = []
+        self.wat2an_parampath = []
+        self.cat2wat_parampath = []
+        self.an2wat_parampath = []
+
 
         # Pre-assigment of the data structures to store the perturbation path
         for atm_ind in range(len(wat_params)):
@@ -524,23 +527,22 @@ class SaltSwap(object):
             work =  logp_initial - logp_final
         elif propagator == 'GHMC':
             ghmc = self.integrator.getIntegrator(1)
-            work = 0.0    # Unitless work
+            ghmc.setGlobalVariableByName("ntrials", 0)      # Reset the internally accumulated work
+            ghmc.setGlobalVariableByName("naccept", 0)
             # Propagation
             ghmc.step(1)
             for stage in range(npert):
-                pot_initial = ghmc.getGlobalVariableByName('potential_new') #self.integrator.getGlobalVariable(5)
                 # Perturbation
                 self.updateForces(mode,exchange_indices,stage)
                 self.forces_to_update.updateParametersInContext(context)
                 # Propagation
                 ghmc.step(1)
-                # Get the potential energy before the steps were taken.
-                pot_final = ghmc.getGlobalVariableByName('potential_initial')
-                # Update the accumulated work
-                work += (pot_final - pot_initial)/self.kT_unitless
+            # Extract the internally calculated work from the integrator
+            work = ghmc.getGlobalVariableByName('work') / self.kT_unitless
             self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         elif propagator == 'GHMC_old':
             # Like the GHMC integrator above, except that energies are calculated with getPotEnergy() for testing and benchmarking
+            # Created due to errors in the energy calculations with CustomIntegrator.
             ghmc = self.integrator.getIntegrator(1)
             work = 0.0    # Unitless work
             # Propagation
