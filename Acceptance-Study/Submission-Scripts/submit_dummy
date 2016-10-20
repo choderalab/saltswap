@@ -3,7 +3,7 @@
 #  utilizing 4 GPUs, with one thread/GPU
 #
 # walltime : maximum wall clock time (hh:mm:ss)
-#PBS -l walltime=70:00:00
+#PBS -l walltime=20:00:00
 #
 # join stdout and stderr
 #PBS -j oe
@@ -40,10 +40,9 @@
 # Change to working directory used for job submission
 cd $PBS_O_WORKDIR
 
-#bash $HOME/.modulerc
-export PATH=/cbio/jclab/home/rossg/miniconda2/bin:$PATH
-module add cuda/7.5
-
+setenv PATH /cbio/jclab/home/rossg/miniconda2/bin\:$PATH
+setenv PYTHONPATH /cbio/jclab/home/rossg/salt/saltswap
+module load cuda
 
 # Launch GPU job.
-/cbio/jclab/home/rossg/miniconda2/bin/python2.7 ../run_sampler.py -d run1.txt --gpu -c 200 -u 710 --propagator GHMC -a 10 -s 2000 REPLACE
+python ../run_sampler.py -e 10000 -d data.txt --ctype CUDA -c 500 -u 750 --propagator GHMC -a 20 -s 1000 REPLACE
