@@ -1,5 +1,5 @@
-# Self adjusted mixture sampling 
-## ** DEPRICATED CODE **
+## Self adjusted mixture sampling 
+** DEPRICATED CODE **
 
 This folder contains an initial go at coding self-adjusted mixture sampling (SAMS) for `saltswap` using binary updates. 
 
