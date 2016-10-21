@@ -5,6 +5,13 @@ from datetime import datetime
 from mcmc_samplers import MCMCSampler
 import numpy as np
 
+"""
+Command line tool for testing the combination of OpenMM molecule dynamics and SaltSwap water-salt exchanges. This script
+has been designed to ease the testing of SaltSwap. It runs SaltSwap on a small box of water, and reports the statistics
+for insertions and deletions, the work required to insert and delete salt, and snapshots of the structures.
+"""
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Run an openmm simulation with salt exchange moves.")
@@ -19,7 +26,7 @@ if __name__ == "__main__":
     parser.add_argument('--nprop',type=int,help="the number of propagation kernels per perturbation, default=1",default=1)
     parser.add_argument('--timestep',type=float,help='the NCMC propagator timstep in femtoseconds, default=1.0',default=1.0)
     parser.add_argument('--propagator',type=str,help="the type integrator used for propagation in NCMC, default=GHMC",default='GHMC')
-    parser.add_argument('--ctype', type=str, choices = ['CPU','CUDA','OpenCL'],help="the platform where the simulation will be run, default=CPU",default='CPU')
+    parser.add_argument('--platform', type=str, choices = ['CPU','CUDA','OpenCL'],help="the platform where the simulation will be run, default=CPU",default='CPU')
     args = parser.parse_args()
 
 
@@ -35,7 +42,7 @@ if __name__ == "__main__":
     # Initialize the class that can sample over MD and salt-water exchanges.
     timestep = args.timestep*unit.femtoseconds
     sampler = MCMCSampler(wbox.system, wbox.topology, wbox.positions, temperature=temperature, pressure=pressure, npert=args.npert,
-                          nprop=args.nprop, propagator=args.propagator, timestep = timestep, delta_chem=delta_chem, mdsteps=args.steps, saltsteps=args.attempts, ctype=args.ctype)
+                          nprop=args.nprop, propagator=args.propagator, ncmc_timestep = timestep, delta_chem=delta_chem, mdsteps=args.steps, saltsteps=args.attempts, platform=args.platform)
 
     # Thermalize
     sampler.gen_config(mdsteps=args.equilibration)
