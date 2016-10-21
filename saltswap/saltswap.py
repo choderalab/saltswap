@@ -223,10 +223,20 @@ class SaltSwap(object):
         self.nan = 0
         return
 
-    def set_parampath(self):
+    def set_parampath(self, lj_step = 1):
         """
-        Produce a linear interpolation between the nonbonded forcefield parameters of water and ion parameters.
-        The linear interpolation serves as a path for NCMC.
+        Produce an interpolation between the non-bonded forcefield parameters of water and ion parameters, with the
+        option to perturb the partial charges more slowly than the Lennard-Jones (LJ) parameters. The interpolation serves
+        as a path for NCMC.
+
+        The perturbation of LJ parameters is slowed relative to the partial charge perturbation by introducing a lag in
+        the update of the LJ path, which is specified by lj_step.  With lj_step > 1, more of the NCMC protocol is spent
+        on the partial charge parameters.
+
+        Parameters
+        ---------
+        lj_step : int
+          the number of perturbation steps taken for the Lennard-Jones parameters per partial charge perturbation.
 
         """
 
@@ -239,7 +249,6 @@ class SaltSwap(object):
         self.cat2wat_parampath = []
         self.an2wat_parampath = []
 
-
         # Pre-assigment of the data structures to store the perturbation path
         for atm_ind in range(len(wat_params)):
             self.wat2cat_parampath.append({'charge':[], 'sigma':[], 'epsilon':[]})
@@ -247,16 +256,34 @@ class SaltSwap(object):
             self.cat2wat_parampath.append({'charge':[], 'sigma':[], 'epsilon':[]})
             self.an2wat_parampath.append({'charge':[], 'sigma':[], 'epsilon':[]})
 
+        # Specifying the effective number of perturbations for the Lennard-Jones parameters.
+        if lj_step >= self.npert:
+            # Ensuring logical consistency. The lag in the LJ perturbation cannot more than the number of perturbations.
+            lj_step = 1
+            npert_lj = self.npert
+        else:
+            if self.npert % lj_step == 0:
+                npert_lj = np.ceil(float(self.npert) / float(lj_step) )
+            else:
+                npert_lj = np.floor(float(self.npert) / float(lj_step) )
         # For each atom in the water model (indexed by atm_ind), the parameters are linearly interpolated between the ions.
         # Both the forward and reverse directions (ie wat2cat and cat2wat) are calculated to save time at each NCMC perturbation
+        n_lj = 0
         for n in range(self.npert + 1):
-            fraction = float(n)/float(self.npert)
+            frac_charge = float(n) / float(self.npert)
+            if n % lj_step == 0:
+                frac_lj = float(n_lj) / float(npert_lj)
+                n_lj += 1
             for atm_ind in range(len(wat_params)):
-                for type in ['charge','sigma','epsilon']:
-                    self.wat2cat_parampath[atm_ind][type].append((1-fraction)*wat_params[atm_ind][type] + fraction*cat_params[atm_ind][type])
-                    self.wat2an_parampath[atm_ind][type].append((1-fraction)*wat_params[atm_ind][type] + fraction*an_params[atm_ind][type])
-                    self.an2wat_parampath[atm_ind][type].append((1-fraction)*an_params[atm_ind][type] + fraction*wat_params[atm_ind][type])
-                    self.cat2wat_parampath[atm_ind][type].append((1-fraction)*cat_params[atm_ind][type] + fraction*wat_params[atm_ind][type])
+                self.wat2cat_parampath[atm_ind]['charge'].append((1 - frac_charge) * wat_params[atm_ind]['charge'] + frac_charge * cat_params[atm_ind]['charge'])
+                self.wat2an_parampath[atm_ind]['charge'].append((1 - frac_charge) * wat_params[atm_ind]['charge'] + frac_charge * an_params[atm_ind]['charge'])
+                self.an2wat_parampath[atm_ind]['charge'].append((1 - frac_charge) * an_params[atm_ind]['charge'] + frac_charge * wat_params[atm_ind]['charge'])
+                self.cat2wat_parampath[atm_ind]['charge'].append((1 - frac_charge) * cat_params[atm_ind]['charge'] + frac_charge * wat_params[atm_ind]['charge'])
+                for type in ['sigma','epsilon']:
+                    self.wat2cat_parampath[atm_ind][type].append((1-frac_lj)*wat_params[atm_ind][type] + frac_lj *cat_params[atm_ind][type])
+                    self.wat2an_parampath[atm_ind][type].append((1-frac_lj)*wat_params[atm_ind][type] + frac_lj *an_params[atm_ind][type])
+                    self.an2wat_parampath[atm_ind][type].append((1-frac_lj)*an_params[atm_ind][type] + frac_lj *wat_params[atm_ind][type])
+                    self.cat2wat_parampath[atm_ind][type].append((1-frac_lj)*cat_params[atm_ind][type] + frac_lj *wat_params[atm_ind][type])
 
     def retrieveResidueParameters(self, topology, resname):
         """
