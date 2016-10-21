@@ -36,8 +36,8 @@ class GHMCIntegrator(mm.CustomIntegrator):
 
         An additional global variable 'potential_initial' records the potential energy before 'nsteps' have been taken.
 
-        Examples
-        --------
+        Example
+        -------
 
         Create a GHMC integrator.
 

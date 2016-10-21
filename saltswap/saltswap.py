@@ -8,17 +8,24 @@ Constant salt dynamics in OpenMM.
 Description
 -----------
 
-This module implements a pure python constant salt functionality in OpenMM, based on OpenMM's constant pH implementation.
-Constant salt simulations are achieved using the semi grand canonical enemble, which molecules/particles to change indentity.
+This class implements a pure python 'constant salt concentration' functionality in OpenMM. In `constant salt
+concentration simulations, the average concentration of salt in a saline reservior is fixed, but the reservoir is allowed
+to exchange water and salt with the simulation system. This means the number of anions and cations in a simulation is a
+fluctuating quantity. The constant salt concentration simulation is achieved using the semi grand canonical ensemble,
+which allows molecules/particles to change identity.
+
+Non-equilibrium candidate Monte Carlo (NCMC) is used to increase acceptance rates of switching.
 
 Based on code from openmm-constph.
 
-Non-equilibrium candidate Monte Carlo (NCMC) can be used to increase acceptance rates of switching.
 
 Notes
 -----
 
-The code is works, but is still in development.
+    * The code is still in development.
+    * The SaltSwap class only performs moves that exchange two  water molecules for an anion-cation pair.
+    * SaltSwap can be combined with molecular dynamics by alternating blocks of SaltSwap moves and molecular dynamics
+     integration steps.
 
 References
 ----------
@@ -27,15 +34,36 @@ References
     (Chapter 9, page 225 to 231)
 [2] Nilmeir, Crooks, Minh, Chodera, Nonequilibrium candidate Monte Carlo is an efficient tool for equilibrium simulation,PNAS,108,E1009
 
-Examples
---------
+Example
+-------
 
-Coming soon to an interpreter near you!
+The OpenMM wrapper for SaltSwap is contained in the MCMCSampler class, which allows alternating steps of molecular
+dynamics and SaltSwap moves. To run SaltSwap without that wrapper, see below. It's assumed SaltSwap will be run on a
+PDB structure of a protein that is immersed in a box of pure water.
+
+# Load the structure and create the system
+>>> pdb = app.PDBFile('protein_in_pure_water.pdb')
+>>> forcefield = app.ForceField('amber99sbildn.xml', 'tip3p.xml')
+>>> system = forcefield.createSystem(pdb.topology, nonbondedMethod=app.PME, nonbondedCutoff=1.0*unit.nanometers, constraints=app.HBonds, rigidWater=True)
+>>> system.addForce(openmm.MonteCarloBarostat(pressure, temperature, 25))
+# To run NCMC, you must use a compound integrator. It's expected the second integrator will be used for NCMC
+>>> compound_integrator = openmm.CompoundIntegrator()
+>>> compound_integrator.addIntegrator(openmm.LangevinIntegrator(temperature, 1/unit.picosecond, 0.002*unit.picoseconds))
+>>> compound_integrator.addIntegrator(GHMCIntegrator(temperature, 1/unit.picosecond, 0.001*unit.picoseconds, nsteps = 2))
+>>> compound_integrator.setCurrentIntegrator(0)
+# Create the context and SaltSwap object. The NCMC protocol will be 2000 perturbutations with 2 propagation steps per perturbation.
+>>> context = openmm.Context(system, compound_integrator)
+>>> context.setPositions(pdb.positions)
+>>> salty = SaltSwap(system=system,topology=pdb.topology,temperature=temperature,delta_chem=0,integrator=compound_integrator,pressure=pressure, npert = 2000, nprop = 2)
+# Simulate with alternating steps of MD and SaltSwap
+>>> for iteration in range(1000):
+>>>     compound_integrator.step(10000)
+>>>     salty.update(context,nattempts=100)
 
 TODO
 ----
-    * Increase accepance rates by either using configuration biasing, or NCMC switching moves. The latter is preferred.
-    * Check that acceptance test is correct; is proposal for exchanges accounted for?
+    * Read in ion parameters from system and topology. Currently, it is assumed the system is neutral with no cations
+    or anions present. The ion parameters are currently supplied internally.
 
 Copyright and license
 ---------------------
@@ -44,13 +72,10 @@ Copyright and license
 
 """
 from __future__ import print_function
-import sys
 import math
 import random
 import numpy as np
-#import simtk.openmm as openmm
 import simtk.unit as units
-#from openmmtools.integrators import VelocityVerletIntegrator
 
 # MODULE CONSTANTS
 kB = units.BOLTZMANN_CONSTANT_kB * units.AVOGADRO_CONSTANT_NA
@@ -86,7 +111,7 @@ class SaltSwap(object):
 
     """
 
-    def __init__(self, system, topology, temperature, delta_chem, integrator, pressure=None, nattempts_per_update=50, debug=False,
+    def __init__(self, system, topology, temperature, delta_chem, integrator, pressure=None, nattempts_per_update=50,
         npert=1, nprop=0, propagator='GHMC', waterName="HOH", cationName='Na+', anionName='Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
@@ -95,22 +120,23 @@ class SaltSwap(object):
         ----------
         system : simtk.openmm.System
             System to be titrated, containing all possible protonation sites.
+        topology : simtk.openmm.app.topology
+             Topology of the system
         temperature : simtk.unit.Quantity compatible with kelvin
             Temperature to be simulated.
-        delta_chem : float
+        delta_chem : float or unit.Quantity
             The difference in chemical potential for swapping 2 water molecules for Na Cl.
-        chemical_names : list of strings
-            Names of each of the residues whose parameters will be exchanged.
+            If it is a float, it is assumed to be in units of kT.
         integrator : simtk.openmm.integrator
             The integrator used for dynamics outside of SaltSwap
         pressure : simtk.unit.Quantity compatible with atmospheres, optional, default=None
             For explicit solvent simulations, the pressure.
-        debug : bool, optional, default=False
-            Turn debug information on/off.
         npert : integer
             Number of NCMC perturbation kernels. Set to 1 for instantaneous switching
         nprop : integer
             Number of propagation kernels (MD steps) per NCMC perturbation kernel. Set to 0 for instantaneous switching
+        propagator : str
+            The name of the NCMC propagator
         ncmc_timestep : simtk.unit.Quantity with units compatible with femtoseconds
             Timestep to use for NCMC switching
         waterName = str, optional, default='HOH'
@@ -119,9 +145,6 @@ class SaltSwap(object):
             Name of cation residue from which parameters are to be taken.
         anionName : str, optional, default='Cl-'
             Name of anion residue from which parameters are to be taken.
-
-        Todo
-        ----
         """
 
         # Set defaults.
@@ -134,12 +157,9 @@ class SaltSwap(object):
         self.kT_unitless = strip_in_unit_system(kB)*strip_in_unit_system(temperature)      # in units of kJ/mol
         self.pressure = pressure
         self.delta_chem = delta_chem
-        self.debug = debug
-
         self.anionName = anionName
         self.cationName = cationName
         self.waterName = waterName
-
         self.integrator = integrator
 
         proplist = ['GHMC', 'GHMC_old', 'velocityVerlet']
@@ -286,7 +306,6 @@ class SaltSwap(object):
         # Creating a list of non-bonded parameters that matches the size of the water model.
         num_wat_atoms = len(self.water_parameters)
 
-        # TODO: set eps to exactly zero to verify bug
         # Initialising dummy atoms to have no non-bonded interactions
         #eps = sys.float_info.epsilon       # the smallest float that's not zero
         eps = 0.0
@@ -330,7 +349,6 @@ class SaltSwap(object):
             if residue.name in residue_names:
                 target_residues.append(residue)
 
-        if self.debug: print('identifyResidues: %d %s molecules identified.' % (len(target_residues),residue_names[0]))
         return target_residues
 
     def initializeStateVector(self):
@@ -361,7 +379,6 @@ class SaltSwap(object):
         self.nattempted = 0
         self.naccepted = 0
 
-        return
 
     def attempt_identity_swap(self,context,penalty,saltmax=None):
         """
@@ -435,7 +452,6 @@ class SaltSwap(object):
                 else:
                     print(detail)
         else:
-            # TODO: check whether stage parameter is correct
             pot_initial = self.getPotEnergy(context)
             self.updateForces(mode_forward,change_indices,stage=self.npert-1)
             self.forces_to_update.updateParametersInContext(context)
@@ -444,6 +460,8 @@ class SaltSwap(object):
 
         # Computing the work (already in units of KT)
         if mode_forward == "remove salt":
+            print(change_indices)
+            print(work)
             self.work_rm.append(work)
         else:
             self.work_add.append(work)
@@ -743,7 +761,7 @@ class SaltSwap(object):
         # Return the log probability.
         return log_P, pot_energy, kin_energy
 
-    def update(self, context,nattempts=None,cost=None,saltmax=None):
+    def update(self, context, nattempts = None, cost = None, saltmax = None):
         """
         Perform a number of Monte Carlo update trials for the titration state.
 
@@ -753,6 +771,13 @@ class SaltSwap(object):
             The context to update
         nattempts : integer
             Number of salt insertion and deletion moves to attempt.
+        cost : float or units.Quantity
+            The difference in chemical potential of two water molecules and an anion and cation.
+            If cost is a unit.Quantity, the cost must be in kJ/mol. If it is a float, it is assumed to be in units
+            of kT.
+        saltmax : int
+            The maximum number of anion-cation pairs that can be inserted. If not specified, the maximum number is
+            roughly half the total number of water molecules.
 
         """
         if nattempts == None: nattempts = self.nattempts_per_update

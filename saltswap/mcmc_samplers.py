@@ -20,7 +20,7 @@ References
 
 [1] Tan Z., Optimally adjusted mixture sampling and locally weighted histogram analysis, Journal of Computational and Graphical Statistics (17 November 2015)
 
-Examples
+Example
 --------
 
 from openmmtools.testsystems import WaterBox
@@ -31,7 +31,7 @@ sampler.multimove(1000)
 Copyright and license
 ---------------------
 
-@author Gregory A. Ross <gregoryross.uk@gmail.com>
+@author Gregory A. Ross <gregory.ross@choderalab.org>
 
 """
 
@@ -57,7 +57,42 @@ class MCMCSampler(object):
 
     """
     def __init__(self, system, topology, positions, temperature = 300*unit.kelvin, pressure = 1*unit.atmospheres, delta_chem = 0, mdsteps = 2000, saltsteps = 0, volsteps = 25,
-        ctype = 'CPU', npert = 1, nprop = 0, timestep = 1.0*unit.femtoseconds, propagator = 'GHMC', waterName = "HOH", cationName = 'Na+', anionName = 'Cl-', debug = False):
+        platform = 'CPU', npert = 1, nprop = 0, ncmc_timestep = 1.0*unit.femtoseconds, propagator = 'GHMC', waterName = "HOH", cationName = 'Na+', anionName = 'Cl-'):
+        """
+        Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
+
+        Parameters
+        ----------
+        system : simtk.openmm.System
+            System to be titrated, containing all possible protonation sites.
+        topology : simtk.openmm.app.topology
+             Topology of the system
+        positions : list or numpy.array
+            The coordinates of each atom in the system
+        temperature : simtk.unit.Quantity compatible with kelvin
+            Temperature to be simulated.
+        integrator : simtk.openmm.integrator
+            The integrator used for dynamics outside of SaltSwap
+        pressure : simtk.unit.Quantity compatible with atmospheres, optional, default=None
+            For explicit solvent simulations, the pressure.
+        delta_chem : float or unit.Quantity
+            The difference in chemical potential for swapping 2 water molecules for Na Cl.
+            If it is a float, it is assumed to be in units of kT.
+        npert : integer
+            Number of NCMC perturbation kernels. Set to 1 for instantaneous switching
+        nprop : integer
+            Number of propagation kernels (MD steps) per NCMC perturbation kernel. Set to 0 for instantaneous switching
+        ncmc_timestep : simtk.unit.Quantity with units compatible with femtoseconds
+            Timestep to use for NCMC switching
+        propagator : str
+            The name of the NCMC propagator
+        waterName = str, optional, default='HOH'
+            Name of water residue that will be exchanged with salt
+        cationName : str, optional, default='Na+'
+            Name of cation residue from which parameters are to be taken.
+        anionName : str, optional, default='Cl-'
+            Name of anion residue from which parameters are to be taken.
+        """
 
         self.delta_chem = delta_chem
         self.temperature = temperature
@@ -72,20 +107,20 @@ class MCMCSampler(object):
         if propagator not in proplist:
             raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
 
-        chip_types = ['CUDA', 'OpenCL', 'CPU']
-        if ctype not in chip_types:
-            raise Exception('Processor type "{0}" not recognized. Re-enter --ctype with a selection from {1}.'.format(ctype, chip_types))
+        platform_types = ['CUDA', 'OpenCL', 'CPU']
+        if platform not in platform_types:
+            raise Exception('platform type "{0}" not recognized. Re-enter --platform with a selection from {1}.'.format(platform, platform_types))
 
         # Setting the compound integrator:
         if nprop != 0:
             self.integrator = openmm.CompoundIntegrator()
             self.integrator.addIntegrator(openmm.LangevinIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds))
             if propagator == 'GHMC':
-                self.integrator.addIntegrator(GHMCIntegrator(temperature, 1/unit.picosecond, timestep, nsteps=nprop))
+                self.integrator.addIntegrator(GHMCIntegrator(temperature, 1/unit.picosecond, ncmc_timestep, nsteps=nprop))
             elif propagator == 'GHMC_old':
-                self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, timestep))
+                self.integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, ncmc_timestep))
             elif propagator=='velocityVerlet':
-                self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(timestep*unit.femtoseconds))
+                self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(ncmc_timestep*unit.femtoseconds))
             else:
                 raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
             self.integrator.setCurrentIntegrator(0)
@@ -98,12 +133,12 @@ class MCMCSampler(object):
             system.addForce(self.barostat)
 
         # Creating the context:
-        if ctype == 'CUDA':
-            platform = openmm.Platform.getPlatformByName(ctype)
+        if platform == 'CUDA':
+            platform = openmm.Platform.getPlatformByName(platform)
             platform.setPropertyDefaultValue('DeterministicForces', 'true')
             properties = {'CudaPrecision': 'mixed'}
             self.context = openmm.Context(system, self.integrator, platform, properties)
-        elif ctype == 'OpenCL':
+        elif platform == 'OpenCL':
             platform = openmm.Platform.getPlatformByName('OpenCL')
             properties = {'OpenCLPrecision': 'mixed'}
             self.context = openmm.Context(system, self.integrator, platform, properties)
@@ -115,7 +150,7 @@ class MCMCSampler(object):
 
         # Initialising the saltswap object
         self.saltswap = SaltSwap(system=system,topology=topology,temperature=temperature, delta_chem=delta_chem,integrator=self.integrator,pressure=pressure,
-                                 npert=npert, nprop=nprop, propagator = propagator, waterName=waterName, cationName=cationName, anionName=anionName, debug=debug)
+                                 npert=npert, nprop=nprop, propagator = propagator, waterName=waterName, cationName=cationName, anionName=anionName)
 
     def gen_config(self,mdsteps=None):
         """
@@ -206,10 +241,10 @@ class SaltSAMS(MCMCSampler):
         DOI: 10.1080/10618600.2015.111397
     """
     def __init__(self,system, topology, positions, temperature=300*unit.kelvin, pressure=1*unit.atmospheres, delta_chem=0, mdsteps=1000, saltsteps=1, volsteps = 25,
-        ctype = 'CPU', npert=0, nprop=0, propagator = 'GHMC', niterations=1000, burnin=100,b=0.7, saltmax = 50):
+        platform = 'CPU', npert=0, nprop=0, propagator = 'GHMC', niterations=1000, burnin=100,b=0.7, saltmax = 50):
 
         super(SaltSAMS, self).__init__(system=system, topology=topology, positions=positions, temperature=temperature, pressure=pressure, delta_chem=delta_chem, mdsteps=mdsteps, saltsteps=saltsteps, volsteps = volsteps,
-        ctype = ctype, npert=npert, nprop=nprop,propagator = propagator)
+        platform = platform, npert=npert, nprop=nprop,propagator = propagator)
 
         self.burnin = burnin
         self.b = b
