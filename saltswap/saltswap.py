@@ -249,8 +249,8 @@ class SaltSwap(object):
 
         # For each atom in the water model (indexed by atm_ind), the parameters are linearly interpolated between the ions.
         # Both the forward and reverse directions (ie wat2cat and cat2wat) are calculated to save time at each NCMC perturbation
-        for n in range(self.npert):
-            fraction = float(n + 1)/float(self.npert)
+        for n in range(self.npert + 1):
+            fraction = float(n)/float(self.npert)
             for atm_ind in range(len(wat_params)):
                 for type in ['charge','sigma','epsilon']:
                     self.wat2cat_parampath[atm_ind][type].append((1-fraction)*wat_params[atm_ind][type] + fraction*cat_params[atm_ind][type])
@@ -416,13 +416,11 @@ class SaltSwap(object):
         # Whether to delete or add salt by selecting random water molecules to turn into a cation and an anion or vice versa.
         if (sum(self.stateVector==1) == 0):
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0],size=2,replace=False)
-            mode_forward = "add salt"
-            mode_backward ="remove salt"
+            mode = "add salt"
             log_accept -= np.log(2)                     # Due to asymmetric proposal probabilities
             cost = penalty[0]              # The free energy to remove salt and add 2 waters to bulk water
         elif (sum(self.stateVector==1) >= saltmax):
-            mode_forward = "remove salt"
-            mode_backward = "add salt"
+            mode = "remove salt"
             cation_index = np.random.choice(a=np.where(self.stateVector==1)[0],size=1)
             anion_index = np.random.choice(a=np.where(self.stateVector==2)[0],size=1)
             change_indices = np.array([cation_index,anion_index])
@@ -430,12 +428,10 @@ class SaltSwap(object):
             cost = penalty[1]
         elif (np.random.random() < 0.5):
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0],size=2,replace=False)
-            mode_forward = "add salt"
-            mode_backward ="remove salt"
+            mode = "add salt"
             cost = penalty[0]
         else:
-            mode_forward = "remove salt"
-            mode_backward = "add salt"
+            mode= "remove salt"
             cation_index = np.random.choice(a=np.where(self.stateVector==1)[0],size=1)
             anion_index = np.random.choice(a=np.where(self.stateVector==2)[0],size=1)
             change_indices = np.array([cation_index,anion_index])
@@ -444,22 +440,23 @@ class SaltSwap(object):
         # Perform perturbation to remove or add salt with NCMC and calculate energies
         if self.nprop > 0:
             try:
-                work = self.NCMC(context,self.npert,self.nprop,mode_forward,change_indices,propagator=self.propagator)
+                work = self.NCMC(context,self.npert,self.nprop,mode,change_indices,propagator=self.propagator)
             except Exception as detail:
                 work = 1000000000000.0               # If the simulation explodes during NCMC, reject with high work
                 if detail[0]=='Particle coordinate is nan':
                     self.nan += 1
                 else:
                     print(detail)
+        # Else make an instantaneous insertion or deletion.
         else:
             pot_initial = self.getPotEnergy(context)
-            self.updateForces(mode_forward,change_indices,stage=self.npert-1)
+            self.updateForces(mode, change_indices, stage = self.npert)
             self.forces_to_update.updateParametersInContext(context)
             pot_final= self.getPotEnergy(context)
             work = (pot_final - pot_initial)/self.kT
 
         # Computing the work (already in units of KT)
-        if mode_forward == "remove salt":
+        if mode == "remove salt":
             print(change_indices)
             print(work)
             self.work_rm.append(work)
@@ -471,7 +468,7 @@ class SaltSwap(object):
  
         # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
         (nwats,ncation,nanion) = self.getIdentityCounts()
-        if mode_forward == 'add salt' :
+        if mode == 'add salt' :
             log_accept += np.log(1.0*nwats*(nwats-1)/(nanion+1)/(nanion+1))
         else :
             log_accept += np.log(1.0*ncation*nanion/(nwats+1)/(nwats+2))
@@ -480,13 +477,13 @@ class SaltSwap(object):
         if (log_accept > 0.0) or (random.random() < math.exp(log_accept)) :
             # Accept :D
             self.naccepted += 1
-            self.setIdentity(mode_forward,change_indices)
+            self.setIdentity(mode, change_indices)
             if self.nprop > 0:
                 context.setVelocities(-context.getState(getVelocities=True).getVelocities(asNumpy=True))
         else:
             # Reject :(
             # Revert parameters to their previous value
-            self.updateForces(mode_backward,change_indices,stage=self.npert-1)
+            self.updateForces(mode, change_indices, stage = 0)
             #self.updateForces_fractional(mode_backward,change_indices,fraction=1.0)    # The old way of reseting parameters
             self.forces_to_update.updateParametersInContext(context)
             if self.nprop > 0:
@@ -534,7 +531,7 @@ class SaltSwap(object):
             logp_initial, pot, kin = self._compute_log_probability(context)
             # Propagation
             self.integrator.step(nprop)
-            for stage in range(npert):
+            for stage in range(npert + 1):
                 # Perturbation
                 self.updateForces(mode,exchange_indices,stage)
                 self.forces_to_update.updateParametersInContext(context)
@@ -549,7 +546,7 @@ class SaltSwap(object):
             ghmc.setGlobalVariableByName("naccept", 0)
             # Propagation
             ghmc.step(1)
-            for stage in range(npert):
+            for stage in range(npert + 1):
                 # Perturbation
                 self.updateForces(mode,exchange_indices,stage)
                 self.forces_to_update.updateParametersInContext(context)
@@ -565,7 +562,7 @@ class SaltSwap(object):
             work = 0.0    # Unitless work
             # Propagation
             ghmc.step(nprop)
-            for stage in range(npert):
+            for stage in range(npert + 1):
                 # Getting the potential energy before the perturbation
                 pot_initial = self.getPotEnergy(context)
                 # Perturbation
