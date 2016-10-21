@@ -1,32 +1,48 @@
 # openmm-saltswap
+** UNDER DEVELOPMENT **
 Code to fluctuate the number of anion-cation (salt) pairs in an explicit water simulation given a salt concentration of a bath.
+
+To use SaltSwap in its current form, add `saltswap/` to your `PYTHONPATH`.
 
 ## Manifest
 
 `saltswap/`
 
 ```
-    saltswap.py		- Python module for implementing salt-water exchanges in explicit water simulations
+    saltswap.py		        - Python driver for implementing salt-water exchanges in explicit water simulations
 ```
-
+```
+    mcmc_samplers.py		- Contains wrappers for SaltSwap that allow easy combination with molecular dynamics and SAMS.
+```
+```
+    integrators.py		    - Custom integrator(s) for NCMC moves in SaltSwap.
+```
 `examples/`
 
 ```
-    run_saltswap.py	- Command line tool for running salt-swap simulations given an input PDB
-    waterbox.pdb	- PDB file of a box of tip3p water
+    run_sampler.py	        - Command line tool for running salt-swap simulations on a pure box of water
 ```
 
-`roughcode/`
+`tests/`
 
 ```
-    Directory were new code is tested
+    Directory containing code tests
 ```
 
-`Analysis/Performance/`
+`Acceptancy-Study/`
 
 ```
-    Directory that contains a set of tests and analyses for erratic performance on GPUs. 
-    Tests revealed code is fine. Further tests required in future.
+    Investigation into the optimal NCMC protocol. For delevopment purposes only. 
+```
+`Performance/`
+
+```
+    Contains scripts that have investigated the time efficiency of SaltSwap. For delevopment purposes only. 
+```
+`SAMS/`
+
+```
+   ** DEPRICATED ** Old test scripts for self adjusted mixture sampling 
 ```
 ## Authors
 
