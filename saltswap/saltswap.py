@@ -484,8 +484,6 @@ class SaltSwap(object):
 
         # Computing the work (already in units of KT)
         if mode == "remove salt":
-            print(change_indices)
-            print(work)
             self.work_rm.append(work)
         else:
             self.work_add.append(work)
@@ -687,7 +685,6 @@ class SaltSwap(object):
         if mode == 'add salt':
             initial_force = self.water_parameters
             # First, adding the cation.
-            #print(mode,exchange_indices[0])
             molecule = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
             atm_index = 0
             for atom in molecule:
@@ -698,7 +695,6 @@ class SaltSwap(object):
                 self.forces_to_update.setParticleParameters(atom.index,charge=charge,sigma=sigma,epsilon=epsilon)
                 atm_index += 1
             # Second, adding the anion.
-            #print(mode,exchange_indices[1])
             molecule = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
             atm_index = 0
             for atom in molecule:
@@ -709,7 +705,6 @@ class SaltSwap(object):
                 self.forces_to_update.setParticleParameters(atom.index,charge=charge,sigma=sigma,epsilon=epsilon)
                 atm_index += 1
         if mode == 'remove salt':
-            #print(mode,exchange_indices[0])
             molecule = [atom for atom in self.mutable_residues[exchange_indices[0]].atoms()]
             initial_force = self.cation_parameters      # exchange_indices[0] is the cation residue.
             atm_index = 0
@@ -720,7 +715,6 @@ class SaltSwap(object):
                 epsilon = (1-fraction)*initial_force[atm_index]["epsilon"] + fraction*target_force["epsilon"]
                 self.forces_to_update.setParticleParameters(atom.index,charge=charge,sigma=sigma,epsilon=epsilon)
                 atm_index += 1
-            #print(mode,exchange_indices[1])
             molecule = [atom for atom in self.mutable_residues[exchange_indices[1]].atoms()]
             initial_force = self.anion_parameters       # exchange_indices[1] is the anion residue.
             atm_index = 0
