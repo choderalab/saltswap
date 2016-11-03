@@ -218,6 +218,9 @@ class SaltSwap(object):
         # Saving the work values for adding and removing salt
         self.work_add = []
         self.work_rm = []
+        self.work_add_per_step = []
+        self.work_rm_per_step = []
+
         self.naccepted_ghmc = []
         # For counting the number of NaNs I get in NCMC. These are automatically rejected.
         self.nan = 0
@@ -467,7 +470,7 @@ class SaltSwap(object):
         # Perform perturbation to remove or add salt with NCMC and calculate energies
         if self.nprop > 0:
             try:
-                work = self.NCMC(context,self.npert,self.nprop,mode,change_indices,propagator=self.propagator)
+                work, work_per_step = self.NCMC(context,self.npert,self.nprop,mode,change_indices,propagator=self.propagator)
             except Exception as detail:
                 work = 1000000000000.0               # If the simulation explodes during NCMC, reject with high work
                 if detail[0]=='Particle coordinate is nan':
@@ -485,8 +488,10 @@ class SaltSwap(object):
         # Computing the work (already in units of KT)
         if mode == "remove salt":
             self.work_rm.append(work)
+            self.work_rm_per_step.append(work_per_step)
         else:
             self.work_add.append(work)
+            self.work_add_per_step.append(work_per_step)
 
         # Cost = F_final - F_initial, where F_initial is the free energy to have the current number of salt molecules.
         log_accept += -cost - work
@@ -549,6 +554,7 @@ class SaltSwap(object):
             The work for appropriate for the stated propagator in units of KT.
 
         """
+        work_per_step = np.zeros(npert + 1)
         self.integrator.setCurrentIntegrator(1)
         if propagator == 'velocityVerlet':
             vv = self.integrator.getIntegrator(1)
@@ -573,10 +579,13 @@ class SaltSwap(object):
             ghmc.step(1)
             for stage in range(npert + 1):
                 # Perturbation
+                initial_energy = ghmc.getGlobalVariableByName('potential_new') / self.kT_unitless
                 self.updateForces(mode,exchange_indices,stage)
                 self.forces_to_update.updateParametersInContext(context)
                 # Propagation
                 ghmc.step(1)
+                final_energy = ghmc.getGlobalVariableByName('potential_initial') / self.kT_unitless
+                work_per_step[stage] = final_energy - initial_energy
             # Extract the internally calculated work from the integrator
             work = ghmc.getGlobalVariableByName('work') / self.kT_unitless
             self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
@@ -604,7 +613,7 @@ class SaltSwap(object):
             raise Exception('Propagator "{0}" not recognized'.format(propagator))
         self.integrator.setCurrentIntegrator(0)
 
-        return work
+        return work, work_per_step
 
     def setIdentity(self,mode,exchange_indices):
         """
