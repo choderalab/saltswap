@@ -33,7 +33,7 @@ def create_context(integrator):
     integrator.step(500)
     return context
 
-format = '%-64s: %8.3f s for %8d steps (%8.3f ps) : %8.3f ms / step : %5.3f x'
+format = '%-64s: %8.3f s for %8d steps (%8.3f ps) : %8.3f ms / step : %7.3f x'
 
 # Time VerletIntegrator without switching
 integrator = VerletIntegrator(timestep)
