@@ -7,7 +7,7 @@ from integrators import GHMCIntegrator
 
 platform = openmm.Platform.getPlatformByName('OpenCL')
 properties = {'Precision': 'mixed'}
-box_edge = 10.0 * unit.angstrom
+box_edge = 20.0 * unit.angstrom
 wbox = WaterBox(box_edge=box_edge, cutoff=box_edge / 2.05, nonbondedMethod=app.PME)
 force = wbox.system.getForce(2) # NonbondedForce
 nsteps = 50000 # number of switching steps
@@ -25,11 +25,11 @@ def create_context(integrator):
     context.setPositions(wbox.positions)
     context.setVelocitiesToTemperature(300*unit.kelvin)
     set_lambda(context, 1.0)
-    integrator.step(100)
+    integrator.step(500)
     return context
 
 print('System has %d particles' % wbox.system.getNumParticles())
-format = '%64s: %8.3f s for %8d steps (%8.3f ps) : %8.3f ms / step'
+format = '%64s: %8.3f s for %8d steps (%8.3f ps) : %8.3f ms / step : %5.3f x'
 
 # Time LangevinIntegrator without switching
 integrator = LangevinIntegrator(temperature, collision_rate, timestep)
@@ -38,8 +38,9 @@ initial_time = time.time()
 for step in range(nsteps):
     integrator.step(1)
 elapsed_time = time.time() - initial_time
+baseline = elapsed_time
 del context, integrator
-print(format % ('LangevinIntegrator', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps)))
+print(format % ('LangevinIntegrator', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps), elapsed_time/baseline))
 
 # Time LangevinIntegrator with switching
 integrator = LangevinIntegrator(temperature, collision_rate, timestep)
@@ -50,7 +51,7 @@ for step in range(nsteps):
     integrator.step(1)
 elapsed_time = time.time() - initial_time
 del context, integrator
-print(format % ('LangevinIntegrator with updateParametersInContext', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps)))
+print(format % ('LangevinIntegrator with updateParametersInContext', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps), elapsed_time/baseline))
 
 # Time GHMCIntegrator without switching
 integrator = GHMCIntegrator(temperature, collision_rate, timestep)
@@ -60,7 +61,7 @@ for step in range(nsteps):
     integrator.step(1)
 elapsed_time = time.time() - initial_time
 del context, integrator
-print(format % ('GHMCIntegratorIntegrator', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps)))
+print(format % ('GHMCIntegratorIntegrator', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps), elapsed_time/baseline))
 
 # Time GHMCIntegrator with switching
 integrator = GHMCIntegrator(temperature, collision_rate, timestep)
@@ -71,4 +72,4 @@ for step in range(nsteps):
     integrator.step(1)
 elapsed_time = time.time() - initial_time
 del context, integrator
-print(format % ('GHMCIntegrator with updateParametersInContext', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps)))
+print(format % ('GHMCIntegrator with updateParametersInContext', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps), elapsed_time/baseline))
