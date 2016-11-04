@@ -6,6 +6,7 @@ from simtk.openmm import VerletIntegrator, LangevinIntegrator
 from integrators import GHMCIntegrator
 
 platform = openmm.Platform.getPlatformByName('OpenCL')
+#properties = {'Precision': 'mixed', 'OpenCLDisablePmeStream':'true'} # uncomment on GTX-1080s
 properties = {'Precision': 'mixed'}
 box_edge = 80.0 * unit.angstrom
 cutoff = 9.0 * unit.angstrom
@@ -32,7 +33,7 @@ def create_context(integrator):
     integrator.step(500)
     return context
 
-format = '%64s: %8.3f s for %8d steps (%8.3f ps) : %8.3f ms / step : %5.3f x'
+format = '%-64s: %8.3f s for %8d steps (%8.3f ps) : %8.3f ms / step : %5.3f x'
 
 # Time VerletIntegrator without switching
 integrator = VerletIntegrator(timestep)
