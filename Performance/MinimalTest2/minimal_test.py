@@ -8,7 +8,8 @@ from integrators import GHMCIntegrator
 platform = openmm.Platform.getPlatformByName('OpenCL')
 properties = {'Precision': 'mixed'}
 box_edge = 80.0 * unit.angstrom
-wbox = WaterBox(box_edge=box_edge, cutoff=box_edge / 2.05, nonbondedMethod=app.PME)
+cutoff = 9.0 * unit.angstrom
+wbox = WaterBox(box_edge=box_edge, cutoff=cutoff, nonbondedMethod=app.PME)
 force = wbox.system.getForce(2) # NonbondedForce
 nsteps = 500 # number of switching steps
 temperature = 300.0 * unit.kelvin
@@ -33,7 +34,7 @@ def create_context(integrator):
 
 format = '%64s: %8.3f s for %8d steps (%8.3f ps) : %8.3f ms / step : %5.3f x'
 
-# Time LangevinIntegrator without switching
+# Time VerletIntegrator without switching
 integrator = VerletIntegrator(timestep)
 context = create_context(integrator)
 initial_time = time.time()
@@ -43,14 +44,27 @@ baseline = elapsed_time
 del context, integrator
 print(format % ('VerletIntegrator.step(nsteps)', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps), elapsed_time/baseline))
 
-# Time LangevinIntegrator without switching
-integrator = LangevinIntegrator(temperature, collision_rate, timestep)
+# Time VerletIntegrator without switching
+integrator = VerletIntegrator(timestep)
 context = create_context(integrator)
 initial_time = time.time()
-integrator.step(nsteps)
+for step in range(nsteps):
+    integrator.step(1)
+elapsed_time = time.time() - initial_time
+baseline = elapsed_time
+del context, integrator
+print(format % ('VerletIntegrator', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps), elapsed_time/baseline))
+
+# Time VerletIntegrator with switching
+integrator = VerletIntegrator(timestep)
+context = create_context(integrator)
+initial_time = time.time()
+for step in range(nsteps):
+    set_lambda(context, lambda_value=float(nsteps-step)/float(nsteps))
+    integrator.step(1)
 elapsed_time = time.time() - initial_time
 del context, integrator
-print(format % ('LangevinIntegrator.step(nsteps)', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps), elapsed_time/baseline))
+print(format % ('VerletIntegrator with updateParametersInContext', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps), elapsed_time/baseline))
 
 # Time LangevinIntegrator without switching
 integrator = LangevinIntegrator(temperature, collision_rate, timestep)
@@ -60,7 +74,7 @@ for step in range(nsteps):
     integrator.step(1)
 elapsed_time = time.time() - initial_time
 del context, integrator
-print(format % ('LangevinIntegrator step(1) loop', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps), elapsed_time/baseline))
+print(format % ('LangevinIntegrator', elapsed_time, nsteps, nsteps*timestep/unit.picoseconds, 1000*elapsed_time/float(nsteps), elapsed_time/baseline))
 
 # Time LangevinIntegrator with switching
 integrator = LangevinIntegrator(temperature, collision_rate, timestep)
