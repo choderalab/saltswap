@@ -179,15 +179,27 @@ class SaltSwap(object):
             if force.__class__.__name__ == 'NonbondedForce':
                 self.forces_to_update = force
 
-        # Check that system has MonteCarloBarostat if pressure is specified.
+        # Record the forces that need to be swicthed off for NCMC
+        forces = {system.getForce(index).__class__.__name__: system.getForce(index) for index in
+                  range(system.getNumForces())}
+        # Control center mass remover
+        if 'CMMotionRemover' in forces:
+            self.cm_remover = forces['CMMotionRemover']
+            self.cm_remover_freq = self.cm_remover.getFrequency()
+        else:
+            self.cm_remover = None
+            self.cm_remover_freq = None
+        # Check that system has MonteCarloBarostat if pressure is specified
         if pressure is not None:
-            forces = {system.getForce(index).__class__.__name__: system.getForce(index) for index in range(system.getNumForces())}
             if 'MonteCarloBarostat' not in forces:
-                self.barofreq = None
                 raise Exception("`pressure` is specified, but `system` object lacks a `MonteCarloBarostat`")
             else:
                 self.barostat = forces['MonteCarloBarostat']
                 self.barofreq = self.barostat.getFrequency()
+        else:
+            self.barostat = None
+            self.barofreq = None
+
 
         self.mutable_residues = self.identifyResidues(self.topology,residue_names=(self.waterName,self.anionName,self.cationName))
 
@@ -554,6 +566,10 @@ class SaltSwap(object):
             The work for appropriate for the stated propagator in units of KT.
 
         """
+
+        if self.cm_remover is not None:
+            self.cm_remover.setFrequency(0)
+
         work_per_step = np.zeros(npert + 1)
         self.integrator.setCurrentIntegrator(1)
         if propagator == 'velocityVerlet':
@@ -612,6 +628,9 @@ class SaltSwap(object):
         else:
             raise Exception('Propagator "{0}" not recognized'.format(propagator))
         self.integrator.setCurrentIntegrator(0)
+
+        if self.cm_remover is not None:
+            self.cm_remover.setFrequency(self.cm_remover_freq)
 
         return work, work_per_step
 
