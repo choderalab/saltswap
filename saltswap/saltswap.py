@@ -505,12 +505,6 @@ class SaltSwap(object):
             self.work_add.append(work)
             self.work_add_per_step.append(cumulative_work)
 
-        if self.propagator == 'GHMC_save_work_per_step':
-            if mode == "remove salt":
-                self.work_rm_per_step.append(work_per_step)
-            else:
-                self.work_add_per_step.append(work_per_step)
-
         # Cost = F_final - F_initial, where F_initial is the free energy to have the current number of salt molecules.
         log_accept += -cost - work
         # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
@@ -601,7 +595,6 @@ class SaltSwap(object):
             ghmc.setGlobalVariableByName("naccept", 0)
             # Propagation
             ghmc.step(1)
-            w=0
             for stage in range(npert + 1):
                 # Perturbation
                 self.updateForces(mode,exchange_indices,stage)
@@ -612,26 +605,6 @@ class SaltSwap(object):
             # Extract the internally calculated work from the integrator
             work = ghmc.getGlobalVariableByName('work') / self.kT_unitless
             # Save the acceptance rate for the NCMC protocol
-            self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
-        elif propagator == 'GHMC_save_work_per_step':
-            # Same as the GHMC integrator, except that the protocol work per perturbation step is recorded.
-            # This is less time efficient.
-            ghmc = self.integrator.getIntegrator(1)
-            ghmc.setGlobalVariableByName("ntrials", 0)      # Reset the internally accumulated work
-            ghmc.setGlobalVariableByName("naccept", 0)
-            # Propagation
-            ghmc.step(1)
-            for stage in range(npert + 1):
-                # Perturbation
-                initial_energy = ghmc.getGlobalVariableByName('potential_new') / self.kT_unitless
-                self.updateForces(mode,exchange_indices,stage)
-                self.forces_to_update.updateParametersInContext(context)
-                # Propagation
-                ghmc.step(1)
-                final_energy = ghmc.getGlobalVariableByName('potential_initial') / self.kT_unitless
-                work_per_step[stage] = final_energy - initial_energy
-            # Extract the internally calculated work from the integrator
-            work = ghmc.getGlobalVariableByName('work') / self.kT_unitless
             self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         elif propagator == 'GHMC_old':
             # Like the GHMC integrator above, except that energies are calculated with getPotEnergy() for testing and benchmarking
