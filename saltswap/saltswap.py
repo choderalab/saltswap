@@ -179,15 +179,27 @@ class SaltSwap(object):
             if force.__class__.__name__ == 'NonbondedForce':
                 self.forces_to_update = force
 
-        # Check that system has MonteCarloBarostat if pressure is specified.
+        # Record the forces that need to be swicthed off for NCMC
+        forces = {system.getForce(index).__class__.__name__: system.getForce(index) for index in
+                  range(system.getNumForces())}
+        # Control center mass remover
+        if 'CMMotionRemover' in forces:
+            self.cm_remover = forces['CMMotionRemover']
+            self.cm_remover_freq = self.cm_remover.getFrequency()
+        else:
+            self.cm_remover = None
+            self.cm_remover_freq = None
+        # Check that system has MonteCarloBarostat if pressure is specified
         if pressure is not None:
-            forces = {system.getForce(index).__class__.__name__: system.getForce(index) for index in range(system.getNumForces())}
             if 'MonteCarloBarostat' not in forces:
-                self.barofreq = None
                 raise Exception("`pressure` is specified, but `system` object lacks a `MonteCarloBarostat`")
             else:
                 self.barostat = forces['MonteCarloBarostat']
                 self.barofreq = self.barostat.getFrequency()
+        else:
+            self.barostat = None
+            self.barofreq = None
+
 
         self.mutable_residues = self.identifyResidues(self.topology,residue_names=(self.waterName,self.anionName,self.cationName))
 
@@ -469,10 +481,7 @@ class SaltSwap(object):
         # Perform perturbation to remove or add salt with NCMC and calculate energies
         if self.nprop > 0:
             try:
-                if self.propagator != 'GHMC_save_work_per_step':
-                    work = self.NCMC(context,self.npert,self.nprop,mode,change_indices,propagator=self.propagator)
-                else:
-                    work, work_per_step = self.NCMC(context,self.npert,self.nprop,mode,change_indices,propagator=self.propagator)
+                work, cumulative_work = self.NCMC(context,self.npert,self.nprop,mode,change_indices,propagator=self.propagator)
             except Exception as detail:
                 work = 1000000000000.0               # If the simulation explodes during NCMC, reject with high work
                 if detail[0]=='Particle coordinate is nan':
@@ -486,12 +495,15 @@ class SaltSwap(object):
             self.forces_to_update.updateParametersInContext(context)
             pot_final= self.getPotEnergy(context)
             work = (pot_final - pot_initial)/self.kT
+            cumulative_work = 0.0
 
         # Computing the work (already in units of KT)
         if mode == "remove salt":
             self.work_rm.append(work)
+            self.work_rm_per_step.append(cumulative_work)
         else:
             self.work_add.append(work)
+            self.work_add_per_step.append(cumulative_work)
 
         if self.propagator == 'GHMC_save_work_per_step':
             if mode == "remove salt":
@@ -501,7 +513,6 @@ class SaltSwap(object):
 
         # Cost = F_final - F_initial, where F_initial is the free energy to have the current number of salt molecules.
         log_accept += -cost - work
- 
         # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
         (nwats,ncation,nanion) = self.getIdentityCounts()
         if mode == 'add salt' :
@@ -532,12 +543,13 @@ class SaltSwap(object):
 
     def NCMC(self,context, npert, nprop, mode, exchange_indices, propagator='GHMC'):
         """
-        Performs nonequilibrium candidate Monte Carlo for the addition or removal of salt.
+        Updates the context with either inserted or deleted salt using non-equilibrium candidate Monte Carlo.
+
         So that the protocol is time symmetric, the protocol is given by
              propagation -> perturbation -> propagation
 
 
-        TODO: have the propagation kernel type read automatically
+        WARNING: The velocity Verlet integrator is depracted.
 
         Parameters
         ----------
@@ -558,10 +570,16 @@ class SaltSwap(object):
         -------
         work: float
             The work for appropriate for the stated propagator in units of KT.
+        cumulative_work: float
+            The cumulative protocol work for each NCMC step
 
         """
-        work_per_step = np.zeros(npert + 1)
+        if self.cm_remover is not None:
+            self.cm_remover.setFrequency(0)
+
+        cumulative_work = np.zeros(npert + 1)
         self.integrator.setCurrentIntegrator(1)
+        #TODO: remove velocity Verlet integrator
         if propagator == 'velocityVerlet':
             vv = self.integrator.getIntegrator(1)
             # Get initial total energy
@@ -583,14 +601,17 @@ class SaltSwap(object):
             ghmc.setGlobalVariableByName("naccept", 0)
             # Propagation
             ghmc.step(1)
+            w=0
             for stage in range(npert + 1):
                 # Perturbation
                 self.updateForces(mode,exchange_indices,stage)
                 self.forces_to_update.updateParametersInContext(context)
                 # Propagation
                 ghmc.step(1)
+                cumulative_work[stage] = ghmc.getGlobalVariableByName('work') / self.kT_unitless
             # Extract the internally calculated work from the integrator
             work = ghmc.getGlobalVariableByName('work') / self.kT_unitless
+            # Save the acceptance rate for the NCMC protocol
             self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         elif propagator == 'GHMC_save_work_per_step':
             # Same as the GHMC integrator, except that the protocol work per perturbation step is recorded.
@@ -631,14 +652,18 @@ class SaltSwap(object):
                 ghmc.step(nprop)
                 # Update the accumulated work
                 work += (pot_final - pot_initial)/self.kT
+                cumulative_work[stage] = work
+            # Save the acceptance rate for the NCMC protocol
             self.naccepted_ghmc.append(ghmc.getGlobalVariableByName('naccept')/ghmc.getGlobalVariableByName('ntrials'))
         else:
             raise Exception('Propagator "{0}" not recognized'.format(propagator))
         self.integrator.setCurrentIntegrator(0)
-        if propagator != 'GHMC_save_work_per_step':
-            return work
-        else:
-            return work, work_per_step
+
+        if self.cm_remover is not None:
+            self.cm_remover.setFrequency(self.cm_remover_freq)
+
+        return work, cumulative_work
+
 
     def setIdentity(self,mode,exchange_indices):
         """
