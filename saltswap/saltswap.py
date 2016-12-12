@@ -440,9 +440,6 @@ class SaltSwap(object):
         if type(penalty)==float:
             penalty = [penalty,-penalty]
 
-        if self.barostat is not None:
-            self.barostat.setFrequency(0)
-
         # If using NCMC, store initial positions.
         if self.nprop > 0:
             initial_positions = context.getState(getPositions=True).getPositions()
@@ -531,10 +528,6 @@ class SaltSwap(object):
                 context.setPositions(initial_positions)
                 context.setVelocities(initial_velocities)
 
-        if self.barostat is not None:
-            self.barostat.setFrequency(self.barofreq)
-
-
     def NCMC(self,context, npert, nprop, mode, exchange_indices, propagator='GHMC'):
         """
         Updates the context with either inserted or deleted salt using non-equilibrium candidate Monte Carlo.
@@ -575,6 +568,10 @@ class SaltSwap(object):
         self.integrator.setCurrentIntegrator(1)
         #TODO: remove velocity Verlet integrator
         if propagator == 'velocityVerlet':
+            # Turn the barostat off, as volume must be constant for sympletic integrator
+            if self.barostat is not None:
+                self.barostat.setFrequency(0)
+
             vv = self.integrator.getIntegrator(1)
             # Get initial total energy
             logp_initial, pot, kin = self._compute_log_probability(context)
@@ -589,6 +586,10 @@ class SaltSwap(object):
             # Get final total energy and calculate total work
             logp_final, pot, kin = self._compute_log_probability(context)
             work =  logp_initial - logp_final
+
+            # Turn the barostat back on
+            if self.barostat is not None:
+                self.barostat.setFrequency(self.barofreq)
         elif propagator == 'GHMC':
             ghmc = self.integrator.getIntegrator(1)
             ghmc.setGlobalVariableByName("ntrials", 0)      # Reset the internally accumulated work
