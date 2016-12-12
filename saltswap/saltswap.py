@@ -539,12 +539,13 @@ class SaltSwap(object):
 
     def NCMC(self,context, npert, nprop, mode, exchange_indices, propagator='GHMC'):
         """
-        Performs nonequilibrium candidate Monte Carlo for the addition or removal of salt.
+        Updates the context with either inserted or deleted salt using non-equilibrium candidate Monte Carlo.
+
         So that the protocol is time symmetric, the protocol is given by
              propagation -> perturbation -> propagation
 
 
-        TODO: have the propagation kernel type read automatically
+        WARNING: The velocity Verlet integrator is depracted.
 
         Parameters
         ----------
@@ -565,6 +566,8 @@ class SaltSwap(object):
         -------
         work: float
             The work for appropriate for the stated propagator in units of KT.
+        cumulative_work: float
+            The cumulative protocol work for each NCMC step
 
         """
 
@@ -573,6 +576,7 @@ class SaltSwap(object):
 
         cumulative_work = np.zeros(npert + 1)
         self.integrator.setCurrentIntegrator(1)
+        #TODO: remove velocity Verlet integrator
         if propagator == 'velocityVerlet':
             vv = self.integrator.getIntegrator(1)
             # Get initial total energy
