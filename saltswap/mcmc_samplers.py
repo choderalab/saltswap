@@ -103,7 +103,7 @@ class MCMCSampler(object):
         self.nprop = nprop
 
         # Exceptions
-        proplist = ['GHMC','GHMC_old','velocityVerlet']
+        proplist = ['GHMC','GHMC_old', 'GHMC_save_work_per_step', 'velocityVerlet']
         if propagator not in proplist:
             raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
 
