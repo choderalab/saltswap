@@ -159,7 +159,7 @@ class TestIntegrators():
         temperature = 298.0 * unit.kelvin
 
         # NCMC parameters
-        npert = 128          # Number of perturbation steps
+        npert = 5          # Number of perturbation steps
         nprop = 2           # Number of propagation steps per perturbation
 
         # Get thermal energy
@@ -169,11 +169,12 @@ class TestIntegrators():
         (wbox, system, reference_force, force, integrator, ghmc, langevin) = self._make_ghmc_system(nprop, temperature)
 
         # Create the context
-        context = openmm.Context(system, integrator)
+        platform = openmm.Platform.getPlatformByName('CPU')
+        context = openmm.Context(system, integrator, platform)
         context.setPositions(wbox.positions)
 
         # Take a few steps of langevin dynamics to test the compound integrator
-        langevin.step(50)
+        langevin.step(5)
 
         #### NCMC ####
         # Accumalating the work performed 3 ways.
@@ -217,7 +218,7 @@ class TestIntegrators():
         temperature = 298.0 * unit.kelvin
 
         # NCMC parameters
-        npert = 128          # Number of perturbation steps
+        npert = 5          # Number of perturbation steps
         nprop = 2           # Number of propagation steps per perturbation
 
         # Get thermal energy
@@ -228,12 +229,13 @@ class TestIntegrators():
 
         # Create the context
         platform = openmm.Platform.getPlatformByName('CUDA')
-        properties = {'CUDAPrecision': 'mixed'}
+        platform.setPropertyDefaultValue('DeterministicForces', 'true')
+        properties = {'CudaPrecision': 'mixed'}
         context = openmm.Context(system, integrator, platform, properties)
         context.setPositions(wbox.positions)
 
         # Take a few steps of langevin dynamics to test the compound integrator
-        langevin.step(50)
+        langevin.step(5)
 
         #### NCMC ####
         # Accumalating the work performed 3 ways.
@@ -272,12 +274,12 @@ class TestIntegrators():
 
         A compound integrator is used to make this test more like the simulation procedure with saltswap.
 
-        This version runs the test on CUDA
+        This version runs the test on OpenCL
         """
-        temperature = 298.0 * unit.kelvin
+        temperature = 310.0 * unit.kelvin
 
         # NCMC parameters
-        npert = 128          # Number of perturbation steps
+        npert = 5          # Number of perturbation steps
         nprop = 2           # Number of propagation steps per perturbation
 
         # Get thermal energy
@@ -293,7 +295,7 @@ class TestIntegrators():
         context.setPositions(wbox.positions)
 
         # Take a few steps of langevin dynamics to test the compound integrator
-        langevin.step(50)
+        langevin.step(5)
 
         #### NCMC ####
         # Accumalating the work performed 3 ways.

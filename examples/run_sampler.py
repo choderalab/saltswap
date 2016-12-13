@@ -1,7 +1,7 @@
 from simtk import openmm, unit
 from simtk.openmm import app
 from openmmtools.testsystems import WaterBox
-from datetime import datetime
+from time import time
 from mcmc_samplers import MCMCSampler
 import numpy as np
 
@@ -32,7 +32,7 @@ if __name__ == "__main__":
 
     # Setting the parameters of the simulation
     size = 25.0*unit.angstrom     # The length of the edges of the water box.
-    temperature = 300*unit.kelvin
+    temperature = 310*unit.kelvin
     pressure = 1*unit.atmospheres
     delta_chem = args.deltachem*unit.kilojoule_per_mole
 
@@ -76,11 +76,11 @@ if __name__ == "__main__":
     pdbfile.close()
     iterations = args.cycles          # Number of rounds of MD and constant salt moves
     # Running simulation
-    startTime = datetime.now()
+    startTime = time()
     for i in range(iterations):
-        iter_start = datetime.now()
+        iter_start = time()
         sampler.move()
-        iter_time = datetime.now() - iter_start
+        iter_time = time() - iter_start
         # Saving acceptance probability data:
         cnts = sampler.saltswap.getIdentityCounts()
         acc = sampler.saltswap.getAcceptanceProbability()
@@ -90,11 +90,11 @@ if __name__ == "__main__":
             ghmc_acc = 0
         sampler.saltswap.naccepted_ghmc = []
         f = open(args.data, 'a')
-        s = "{:4} {:5} {:5}   {:0.2f}      {:0.2f}   {:4}\n".format(i, cnts[0], cnts[1], round(acc,2), round(ghmc_acc,2), iter_time.seconds)
+        s = "{:4} {:5} {:5}   {:0.2f}      {:0.2f}       {:0.1f}\n".format(i, cnts[0], cnts[1], round(acc,2), round(ghmc_acc,2), iter_time)
         f.write(s)
         f.close()
         # Reset acceotance saltswap acceptance rate
-        sampler.saltswap.resetStatistics()
+        #sampler.saltswap.resetStatistics()
         # Saving work data for each of the nattempts and reseting:
         if len(sampler.saltswap.work_add) >= 0:
             f = open("work_add_"+args.data,"a")
@@ -113,10 +113,10 @@ if __name__ == "__main__":
         app.PDBFile.writeModel(wbox.topology, positions, file=pdbfile, modelIndex=i+1)
         pdbfile.close()
 
-    tm = datetime.now() - startTime
+    tm = time() - startTime
 
     f = open(args.data, 'a')
-    s = "\nElapsed time in seconds = {:7}".format(tm.seconds)
+    s = "\nElapsed time in seconds = {:0.1f}".format(tm)
     f.write(s)
     s = "\nNumber of NaNs = {:3}\n".format(sampler.saltswap.nan)
     f.write(s)

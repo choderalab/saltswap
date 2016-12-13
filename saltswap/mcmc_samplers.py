@@ -56,7 +56,7 @@ class MCMCSampler(object):
     ----------
 
     """
-    def __init__(self, system, topology, positions, temperature = 300*unit.kelvin, pressure = 1*unit.atmospheres, delta_chem = 0, mdsteps = 2000, saltsteps = 0, volsteps = 25,
+    def __init__(self, system, topology, positions, temperature = 310*unit.kelvin, pressure = 1*unit.atmospheres, delta_chem = 0, mdsteps = 2000, saltsteps = 0, volsteps = 25,
         platform = 'CPU', npert = 1, nprop = 0, ncmc_timestep = 1.0*unit.femtoseconds, propagator = 'GHMC', waterName = "HOH", cationName = 'Na+', anionName = 'Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
@@ -114,7 +114,7 @@ class MCMCSampler(object):
         # Setting the compound integrator:
         if nprop != 0:
             self.integrator = openmm.CompoundIntegrator()
-            self.integrator.addIntegrator(openmm.LangevinIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds))
+            self.integrator.addIntegrator(GHMCIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds, nsteps=1))
             if propagator == 'GHMC':
                 self.integrator.addIntegrator(GHMCIntegrator(temperature, 1/unit.picosecond, ncmc_timestep, nsteps=nprop))
             elif propagator == 'GHMC_old':
@@ -125,7 +125,7 @@ class MCMCSampler(object):
                 raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
             self.integrator.setCurrentIntegrator(0)
         else:
-            self.integrator = openmm.LangevinIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds)
+            self.integrator = GHMCIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds, nsteps=1)
 
         # Setting the barostat:
         if pressure is not None:

@@ -162,7 +162,7 @@ class SaltSwap(object):
         self.waterName = waterName
         self.integrator = integrator
 
-        proplist = ['GHMC', 'GHMC_old', 'GHMC_save_work_per_step', 'velocityVerlet']
+        proplist = ['GHMC', 'GHMC_old', 'velocityVerlet']
         if propagator in proplist:
             self.propagator = propagator
         elif propagator not in proplist and npert==0:
