@@ -32,7 +32,7 @@ if __name__ == "__main__":
 
     # Setting the parameters of the simulation
     size = 25.0*unit.angstrom     # The length of the edges of the water box.
-    temperature = 310*unit.kelvin
+    temperature = 300*unit.kelvin
     pressure = 1*unit.atmospheres
     delta_chem = args.deltachem*unit.kilojoule_per_mole
 

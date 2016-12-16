@@ -56,7 +56,7 @@ class MCMCSampler(object):
     ----------
 
     """
-    def __init__(self, system, topology, positions, temperature = 310*unit.kelvin, pressure = 1*unit.atmospheres, delta_chem = 0, mdsteps = 2000, saltsteps = 0, volsteps = 25,
+    def __init__(self, system, topology, positions, temperature = 300*unit.kelvin, pressure = 1*unit.atmospheres, delta_chem = 0, mdsteps = 2000, saltsteps = 0, volsteps = 25,
         platform = 'CPU', npert = 1, nprop = 0, ncmc_timestep = 1.0*unit.femtoseconds, propagator = 'GHMC', waterName = "HOH", cationName = 'Na+', anionName = 'Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
