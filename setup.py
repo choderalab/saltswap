@@ -15,7 +15,7 @@ setup(
             'Unix'],
     zip_safe=False,
     install_requires=[
-        'simtk.openmm',
+        'openmm',
         'numpy',
         ],
 )
