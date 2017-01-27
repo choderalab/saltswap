@@ -41,6 +41,6 @@ pickle.dump(sampler.saltswap.work_add_per_step, open('work_add.pickle', "wb" ))
 #for i in range(len(sampler.saltswap.work_add_per_step)):
 #    plt.plot(sampler.saltswap.work_add_per_step[i],color='blue', alpha=0.3)
 #plt.grid()
-#plt.xlabel('NCMC step')
+#plt.xlabel('_ncmc step')
 #plt.ylabel('Work per step (kT)')
 #plt.savefig('Step_Work_Add.png', format="png")

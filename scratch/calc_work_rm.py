@@ -32,7 +32,7 @@ sampler.gen_config(mdsteps=equilibration)
 nosalt = True
 while nosalt:
     sampler.saltswap.update(sampler.context, nattempts=1, cost=-10000)
-    n_wats, n_ions, n_ions = sampler.saltswap.getIdentityCounts()
+    n_wats, n_ions, n_ions = sampler.saltswap.get_identity_counts()
     nosalt = (n_ions == 0)
 
 
@@ -49,6 +49,6 @@ pickle.dump(sampler.saltswap.work_rm_per_step, open('work_rm.pickle', "wb" ))
 #for i in range(len(sampler.saltswap.work_add_per_step)):
 #    plt.plot(sampler.saltswap.work_add_per_step[i],color='blue', alpha=0.3)
 #plt.grid()
-#plt.xlabel('NCMC step')
+#plt.xlabel('_ncmc step')
 #plt.ylabel('Work per step (kT)')
 #plt.savefig('Step_Work_Add.png', format="png")

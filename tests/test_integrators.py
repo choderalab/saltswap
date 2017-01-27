@@ -44,16 +44,16 @@ def detect_opencl():
 
 class TestIntegrators():
     """
-    Tests the NCMC integrators in SaltSwap, using a box of water as the test system. In order to exclusively test the
-    integrators, this class is a very simplified version of SaltSwap, and it defines its own functions for an
-    NCMC procedure.
+    Tests the _ncmc integrators in Swapper, using a box of water as the test system. In order to exclusively test the
+    integrators, this class is a very simplified version of Swapper, and it defines its own functions for an
+    _ncmc procedure.
 
     Some of the tests are platform specific.
     """
 
     def _get_nonbonded_force(self, system):
         """
-        Extracts the non-bonded force from a system for use in NCMC
+        Extracts the non-bonded force from a system for use in _ncmc
         """
         forces = { system.getForce(index).__class__.__name__ : system.getForce(index) for index in range(system.getNumForces()) }
         return forces['NonbondedForce']
@@ -65,7 +65,7 @@ class TestIntegrators():
         Parameters
         ----------
         stage : int
-          The stage along the NCMC procedure
+          The stage along the _ncmc procedure
         reference_force : OpenMM force object
           Pointer to the non-bonded force of the system prior to any perturbations
         force : OpenMM force object
@@ -105,7 +105,7 @@ class TestIntegrators():
         Parameters
         ----------
         nprop: int
-          The number of NCMC propagation steps per propagation step
+          The number of _ncmc propagation steps per propagation step
         temperature: Quantity Kelvin
           The temperature at which the simulation will be performed
         collision_rate: Quantity 1/time
@@ -126,9 +126,9 @@ class TestIntegrators():
         integrator : openmm.CompoundIntegrator
           the compound integrator
         ghmc : openmm.CustomIntegrator
-          The GHMC integrator used in NCMC moves in SaltSwap
+          The GHMC integrator used in _ncmc moves in Swapper
         langevin : openmm.integrator
-          The Langevin integrator for non-NCMC moves.
+          The Langevin integrator for non-_ncmc moves.
         """
 
         # Make the water box test system
@@ -149,7 +149,7 @@ class TestIntegrators():
 
     def test_ghmc_integrator_cpu(self):
         """
-        Tests the GHMC integrator with an NCMC procedure on a box of water. The protocol work is calculated inside the
+        Tests the GHMC integrator with an _ncmc procedure on a box of water. The protocol work is calculated inside the
         integrator and externally with getState(getEnergy=True). The work calculated with both methods should agree.
 
         A compound integrator is used to make this test more like the simulation procedure with saltswap.
@@ -158,7 +158,7 @@ class TestIntegrators():
         """
         temperature = 298.0 * unit.kelvin
 
-        # NCMC parameters
+        # _ncmc parameters
         npert = 5          # Number of perturbation steps
         nprop = 2           # Number of propagation steps per perturbation
 
@@ -176,7 +176,7 @@ class TestIntegrators():
         # Take a few steps of langevin dynamics to test the compound integrator
         langevin.step(5)
 
-        #### NCMC ####
+        #### _ncmc ####
         # Accumalating the work performed 3 ways.
         ext_work_integrator = 0.0    # Externally-accumulated unitless work calculated using integrator variables
         ext_work_getenergy = 0.0     # Externally-accumulated unitless work calculated using getEnergy()
@@ -208,7 +208,7 @@ class TestIntegrators():
     @pytest.mark.skipif(detect_cuda(), reason="CUDA not detected on platform")
     def test_ghmc_integrator_cuda(self):
         """
-        Tests the GHMC integrator with an NCMC procedure on a box of water. The protocol work is calculated inside the
+        Tests the GHMC integrator with an _ncmc procedure on a box of water. The protocol work is calculated inside the
         integrator and externally with getState(getEnergy=True). The work calculated with both methods should agree.
 
         A compound integrator is used to make this test more like the simulation procedure with saltswap.
@@ -217,7 +217,7 @@ class TestIntegrators():
         """
         temperature = 298.0 * unit.kelvin
 
-        # NCMC parameters
+        # _ncmc parameters
         npert = 5          # Number of perturbation steps
         nprop = 2           # Number of propagation steps per perturbation
 
@@ -237,7 +237,7 @@ class TestIntegrators():
         # Take a few steps of langevin dynamics to test the compound integrator
         langevin.step(5)
 
-        #### NCMC ####
+        #### _ncmc ####
         # Accumalating the work performed 3 ways.
         ext_work_integrator = 0.0    # Externally-accumulated unitless work calculated using integrator variables
         ext_work_getenergy = 0.0     # Externally-accumulated unitless work calculated using getEnergy()
@@ -269,7 +269,7 @@ class TestIntegrators():
     @pytest.mark.skipif(detect_opencl(), reason="OpenCL not detected on platform")
     def test_ghmc_integrator_opencl(self):
         """
-        Tests the GHMC integrator with an NCMC procedure on a box of water. The protocol work is calculated inside the
+        Tests the GHMC integrator with an _ncmc procedure on a box of water. The protocol work is calculated inside the
         integrator and externally with getState(getEnergy=True). The work calculated with both methods should agree.
 
         A compound integrator is used to make this test more like the simulation procedure with saltswap.
@@ -278,7 +278,7 @@ class TestIntegrators():
         """
         temperature = 310.0 * unit.kelvin
 
-        # NCMC parameters
+        # _ncmc parameters
         npert = 5          # Number of perturbation steps
         nprop = 2           # Number of propagation steps per perturbation
 
@@ -297,7 +297,7 @@ class TestIntegrators():
         # Take a few steps of langevin dynamics to test the compound integrator
         langevin.step(5)
 
-        #### NCMC ####
+        #### _ncmc ####
         # Accumalating the work performed 3 ways.
         ext_work_integrator = 0.0    # Externally-accumulated unitless work calculated using integrator variables
         ext_work_getenergy = 0.0     # Externally-accumulated unitless work calculated using getEnergy()

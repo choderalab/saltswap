@@ -6,8 +6,8 @@ from mcmc_samplers import MCMCSampler
 import numpy as np
 
 """
-Command line tool for testing the combination of OpenMM molecule dynamics and SaltSwap water-salt exchanges. This script
-has been designed to ease the testing of SaltSwap. It runs SaltSwap on a small box of water, and reports the statistics
+Command line tool for testing the combination of OpenMM molecule dynamics and Swapper water-salt exchanges. This script
+has been designed to ease the testing of Swapper. It runs Swapper on a small box of water, and reports the statistics
 for insertions and deletions, the work required to insert and delete salt, and snapshots of the structures.
 """
 
@@ -22,10 +22,10 @@ if __name__ == "__main__":
     parser.add_argument('-s','--steps',type=int,help="the number of MD steps per cycle, default=25000",default=1000)
     parser.add_argument('-a','--attempts',type=int,help="the number of salt-water swap moves attempted, default=100",default=10)
     parser.add_argument('-e','--equilibration',type=int,help="the number of equilibration steps, default=1000",default=1000)
-    parser.add_argument('--npert',type=int,help="the number of NCMC perturbation kernels, default=1000",default=1000)
+    parser.add_argument('--npert',type=int,help="the number of _ncmc perturbation kernels, default=1000",default=1000)
     parser.add_argument('--nprop',type=int,help="the number of propagation kernels per perturbation, default=1",default=1)
-    parser.add_argument('--timestep',type=float,help='the NCMC propagator timstep in femtoseconds, default=1.0',default=1.0)
-    parser.add_argument('--propagator',type=str,help="the type integrator used for propagation in NCMC, default=GHMC",default='GHMC')
+    parser.add_argument('--timestep',type=float,help='the _ncmc propagator timstep in femtoseconds, default=1.0',default=1.0)
+    parser.add_argument('--propagator',type=str,help="the type integrator used for propagation in _ncmc, default=GHMC",default='GHMC')
     parser.add_argument('--platform', type=str, choices = ['CPU','CUDA','OpenCL'],help="the platform where the simulation will be run, default=CPU",default='CPU')
     args = parser.parse_args()
 
@@ -82,8 +82,8 @@ if __name__ == "__main__":
         sampler.move()
         iter_time = time() - iter_start
         # Saving acceptance probability data:
-        cnts = sampler.saltswap.getIdentityCounts()
-        acc = sampler.saltswap.getAcceptanceProbability()
+        cnts = sampler.saltswap.get_identity_counts()
+        acc = sampler.saltswap.get_acceptance_probability()
         if args.nprop != 0 and args.propagator == 'GHMC':
             ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ghmc))
         else:
@@ -94,7 +94,7 @@ if __name__ == "__main__":
         f.write(s)
         f.close()
         # Reset acceotance saltswap acceptance rate
-        #sampler.saltswap.resetStatistics()
+        #sampler.saltswap.reset_statistics()
         # Saving work data for each of the nattempts and reseting:
         if len(sampler.saltswap.work_add) >= 0:
             f = open("work_add_"+args.data,"a")

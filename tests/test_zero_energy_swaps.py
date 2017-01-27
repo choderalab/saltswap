@@ -41,13 +41,13 @@ class TestZeroEnergySwaps(object):
         dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu, nprop = 0, npert = 1)
         dummystate.saltswap.cation_parameters = dummystate.saltswap.water_parameters    # Setting the cation parameters to water's
         dummystate.saltswap.anion_parameters = dummystate.saltswap.water_parameters     # Setting the anion parameters to water's
-        dummystate.saltswap.set_parampath()     # Recalculating the peturbation path for new paramters
+        dummystate.saltswap._set_parampath()     # Recalculating the peturbation path for new paramters
 
         # Sampling. Recording the ratio of water to salt every 20 attempts and repeated Nsamps times.
         ratio = []
         for batch in range(Nsamps):
             dummystate.gen_label(saltsteps=20)
-            (nwats,nsalt,junk) = dummystate.saltswap.getIdentityCounts()
+            (nwats,nsalt,junk) = dummystate.saltswap.get_identity_counts()
             ratio.append(1.0*nwats/nsalt)
         ratio = np.array(ratio)
         ratio_mean = np.mean(ratio)
@@ -59,7 +59,7 @@ class TestZeroEnergySwaps(object):
 
     def test_ideal_swaps_GHMC(self, Dmu = 0, size = 15.0 * unit.angstrom, Nsamps = 50):
         """
-        Box of water test for zero energy swap for NCMC insertions and deletions using a GHMC integrator.
+        Box of water test for zero energy swap for _ncmc insertions and deletions using a GHMC integrator.
 
         Parameter
         ---------
@@ -78,13 +78,13 @@ class TestZeroEnergySwaps(object):
         dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu, nprop = 1, npert = 5, propagator='GHMC')
         dummystate.saltswap.cation_parameters = dummystate.saltswap.water_parameters    # Setting the cation parameters to water's
         dummystate.saltswap.anion_parameters = dummystate.saltswap.water_parameters     # Setting the anion parameters to water's
-        dummystate.saltswap.set_parampath()     # Recalculating the peturbation path for new paramters
+        dummystate.saltswap._set_parampath()     # Recalculating the peturbation path for new paramters
 
         # Sampling. Recording the ratio of water to salt every 20 attempts and repeated Nsamps times.
         ratio = []
         for batch in range(Nsamps):
             dummystate.gen_label(saltsteps=20)
-            (nwats,nsalt,junk) = dummystate.saltswap.getIdentityCounts()
+            (nwats,nsalt,junk) = dummystate.saltswap.get_identity_counts()
             ratio.append(1.0*nwats/nsalt)
         ratio = np.array(ratio)
         ratio_mean = np.mean(ratio)
@@ -96,7 +96,7 @@ class TestZeroEnergySwaps(object):
 
     def test_ideal_swaps_velocity_verlet(self, Dmu = 0, size = 15.0 * unit.angstrom, Nsamps = 50):
         """
-        Box of water test for zero energy swap for NCMC insertions and deletions using a velocity Verlet integrator.
+        Box of water test for zero energy swap for _ncmc insertions and deletions using a velocity Verlet integrator.
 
         Parameter
         ---------
@@ -115,13 +115,13 @@ class TestZeroEnergySwaps(object):
         dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu, nprop = 1, npert = 5, propagator='velocityVerlet')
         dummystate.saltswap.cation_parameters = dummystate.saltswap.water_parameters    # Setting the cation parameters to water's
         dummystate.saltswap.anion_parameters = dummystate.saltswap.water_parameters     # Setting the anion parameters to water's
-        dummystate.saltswap.set_parampath()     # Recalculating the peturbation path for new paramters
+        dummystate.saltswap._set_parampath()     # Recalculating the peturbation path for new paramters
 
         # Sampling. Recording the ratio of water to salt every 20 attempts and repeated Nsamps times.
         ratio = []
         for batch in range(Nsamps):
             dummystate.gen_label(saltsteps=20)
-            (nwats,nsalt,junk) = dummystate.saltswap.getIdentityCounts()
+            (nwats,nsalt,junk) = dummystate.saltswap.get_identity_counts()
             ratio.append(1.0*nwats/nsalt)
         ratio = np.array(ratio)
         ratio_mean = np.mean(ratio)

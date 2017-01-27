@@ -6,7 +6,7 @@ from simtk import openmm, unit
 from simtk.openmm import app
 import sys
 sys.path.append("../saltswap/")
-import saltswap
+import swapper
 import gc
 
 if __name__ == "__main__":
@@ -20,8 +20,8 @@ if __name__ == "__main__":
     parser.add_argument('-s','--steps',type=int,help="the number of MD steps per cycle, default=250000",default=250000)
     parser.add_argument('-a','--attempts',type=int,help="the number of salt-water swap moves attempted, default=100",default=100)
     parser.add_argument('-e','--equilibration',type=int,help="the number of equilibration steps, default=1000",default=1000)
-    parser.add_argument('--nkernals',type=int,help="the number of NCMC kernals, default=1",default=5)
-    parser.add_argument('--nverlet',type=int,help="the number of Verlet steps used in each NCMC iteration, default=0",default=1)
+    parser.add_argument('--nkernals',type=int,help="the number of _ncmc kernals, default=1",default=5)
+    parser.add_argument('--nverlet',type=int,help="the number of Verlet steps used in each _ncmc iteration, default=0",default=1)
     parser.add_argument("--gpu",action='store_true',help="whether the simulation will be run on a GPU, default=False",default=False)
     args = parser.parse_args()
 
@@ -52,7 +52,7 @@ system.addForce(openmm.MonteCarloBarostat(pressure, temperature, 25))
 
 s = "Initializing constant salt class"
 print s
-mc_saltswap = saltswap.SaltSwap(system=system,topology=pdb.topology,temperature=temperature,delta_chem=delta_chem,integrator=integrator,pressure=pressure,debug=False,nkernals=args.nkernals, nverlet_steps=args.nverlet)
+mc_saltswap = swapper.Swapper(system=system, topology=pdb.topology, temperature=temperature, delta_chem=delta_chem, integrator=integrator, pressure=pressure, debug=False, nkernals=args.nkernals, nverlet_steps=args.nverlet)
 
 s = "Initializing context"
 print s
@@ -96,15 +96,15 @@ for i in range(iterations):
     mc_saltswap.update(context,nattempts=nattempts)
     iter_time = datetime.now() - iter_start
     # Custom reporters: (simulations.reporters severely slows the simulations down)
-    cnts = mc_saltswap.getIdentityCounts()
-    nrg = mc_saltswap.getPotEnergy(context)
+    cnts = mc_saltswap.get_identity_counts()
+    nrg = mc_saltswap._get_potential_energy(context)
     dims = pdb.topology.getUnitCellDimensions()
-    acc = mc_saltswap.getAcceptanceProbability()
+    acc = mc_saltswap.get_acceptance_probability()
     f = open(args.data, 'a')
     s = "{:4} {:5} {:5}   {:0.2f} {:4}\n".format(i,cnts[0],cnts[1],round(acc,2),iter_time.seconds)
     f.write(s)
     f.close()
-    mc_saltswap.resetStatistics()
+    mc_saltswap.reset_statistics()
     positions = context.getState(getPositions=True,enforcePeriodicBox=True).getPositions(asNumpy=True)
     app.PDBFile.writeModel(pdb.topology, positions, file=pdbfile, modelIndex=i+1)
     gc.collect()
