@@ -5,7 +5,7 @@ from openmmtools import integrators
 from datetime import datetime
 #import sys
 #sys.path.append("../saltswap/")
-import saltswap
+import swapper
 
 if __name__ == "__main__":
     import argparse
@@ -17,8 +17,8 @@ if __name__ == "__main__":
     parser.add_argument('-s','--steps',type=int,help="the number of MD steps per cycle, default=25000",default=25000)
     parser.add_argument('-a','--attempts',type=int,help="the number of salt-water swap moves attempted, default=100",default=100)
     parser.add_argument('-e','--equilibration',type=int,help="the number of equilibration steps, default=1000",default=1000)
-    parser.add_argument('--nkernels',type=int,help="the number of NCMC kernels, default=1000",default=1000)
-    parser.add_argument('--nverlet',type=int,help="the number of Verlet steps used in each NCMC iteration, default=1",default=1)
+    parser.add_argument('--nkernels',type=int,help="the number of _ncmc kernels, default=1000",default=1000)
+    parser.add_argument('--nverlet',type=int,help="the number of Verlet steps used in each _ncmc iteration, default=1",default=1)
     parser.add_argument("--gpu",action='store_true',help="whether the simulation will be run on a GPU, default=False",default=False)
     args = parser.parse_args()
 
@@ -31,7 +31,7 @@ delta_chem = args.deltachem*unit.kilojoule_per_mole
 # Creating the test system
 wbox = WaterBox(box_edge=size,nonbondedMethod=app.PME)
 
-# Creating an integrator for both MD and NCMC
+# Creating an integrator for both MD and _ncmc
 compound_integrator = openmm.CompoundIntegrator()
 #compound_integrator.addIntegrator(openmm.LangevinIntegrator(temperature, 1/unit.picosecond, 0.002*unit.picoseconds))
 compound_integrator.addIntegrator(integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 0.002*unit.picoseconds))
@@ -56,7 +56,7 @@ context.setVelocitiesToTemperature(temperature)
 compound_integrator.step(args.equilibration)
 
 # Creating the saltswap object
-mc_saltswap = saltswap.SaltSwap(system=wbox.system,topology=wbox.topology,temperature=temperature,delta_chem=delta_chem,integrator=compound_integrator,pressure=pressure,debug=False,nkernels=args.nkernels, nverlet_steps=args.nverlet)
+mc_saltswap = swapper.Swapper(system=wbox.system, topology=wbox.topology, temperature=temperature, delta_chem=delta_chem, integrator=compound_integrator, pressure=pressure, debug=False, nkernels=args.nkernels, nverlet_steps=args.nverlet)
 
 # Opening file to store simulation data
 f = open(args.data, 'w')
@@ -91,9 +91,9 @@ for i in range(iterations):
     mc_saltswap.update(context,nattempts=nattempts)
     iter_time = datetime.now() - iter_start
     # Saving acceptance probability data:
-    cnts = mc_saltswap.getIdentityCounts()
-    nrg = mc_saltswap.getPotEnergy(context)
-    acc = mc_saltswap.getAcceptanceProbability()
+    cnts = mc_saltswap.get_identity_counts()
+    nrg = mc_saltswap._get_potential_energy(context)
+    acc = mc_saltswap.get_acceptance_probability()
     f = open(args.data, 'a')
     s = "{:4} {:5} {:5}   {:0.2f} {:4}\n".format(i,cnts[0],cnts[1],round(acc,2),iter_time.seconds)
     f.write(s)

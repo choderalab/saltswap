@@ -4,12 +4,12 @@ from simtk.openmm import app
 import numpy as np
 import copy
 from mcmc_samplers import MCMCSampler
-from saltswap import strip_in_unit_system
+from swapper import strip_in_unit_system
 import pytest
 
 class TestParamPerturbations(object):
     """
-    Class to verify the correct handling of non-bonded parameters in SaltSwap before and after exchange moves.
+    Class to verify the correct handling of non-bonded parameters in Swapper before and after exchange moves.
     """
 
     def _get_params(self, saltswap, mol_ind):
@@ -79,7 +79,7 @@ class TestParamPerturbations(object):
         nosalt = True
         while nosalt :
             saltswap.update(state.context, nattempts = 1, cost = Dmu_insert)
-            n_wats ,n_ions, n_ions = saltswap.getIdentityCounts()
+            n_wats ,n_ions, n_ions = saltswap.get_identity_counts()
             nosalt = (n_ions == 0)
 
         # Get the parameters of the anion and cations
@@ -97,7 +97,7 @@ class TestParamPerturbations(object):
 
     def test_salt_insertions_ncmc(self):
         """
-        Verifies whether the saltswap non-bonded parameter exchanges do not affect the end states for NCMC
+        Verifies whether the saltswap non-bonded parameter exchanges do not affect the end states for _ncmc
         switches. This function tests the parameters in the perturbations water --> cation and water --> anion.
 
         The test system is a box of water.
@@ -113,7 +113,7 @@ class TestParamPerturbations(object):
         nosalt = True
         while nosalt :
             saltswap.update(state.context, nattempts = 1, cost = Dmu_insert)
-            n_wats ,n_ions, n_ions = saltswap.getIdentityCounts()
+            n_wats ,n_ions, n_ions = saltswap.get_identity_counts()
             nosalt = (n_ions == 0)
 
         # Get the parameters of the anion and cations
@@ -148,7 +148,7 @@ class TestParamPerturbations(object):
         nosalt = True
         while nosalt :
             saltswap.update(state.context, nattempts = 1, cost = Dmu_insert)
-            n_wats ,n_ions, n_ions = saltswap.getIdentityCounts()
+            n_wats ,n_ions, n_ions = saltswap.get_identity_counts()
             nosalt = (n_ions == 0)
 
         # Get the parameters of the new anion and cations that were previously water
@@ -158,7 +158,7 @@ class TestParamPerturbations(object):
         # Now delete the anion and cation, using the negative of the original chemical potential
         while not nosalt :
             saltswap.update(state.context, nattempts = 1, cost = -Dmu_insert)
-            n_wats ,n_ions, n_ions = saltswap.getIdentityCounts()
+            n_wats ,n_ions, n_ions = saltswap.get_identity_counts()
             nosalt = (n_ions == 0)
 
         # Check that parameters of the deleted anion and cation match the orginal water parameters
@@ -168,7 +168,7 @@ class TestParamPerturbations(object):
     def test_salt_deletions_ncmc(self):
         """
         Confirms the correct end state non-bonded parameters for the cyclic perturbations water --> cation --> water
-        and water --> anion --> water. Testing NCMC switches in a box of water.
+        and water --> anion --> water. Testing _ncmc switches in a box of water.
         """
         Dmu_insert = -10000.0
         size = 15.0 * unit.angstrom
@@ -183,7 +183,7 @@ class TestParamPerturbations(object):
         nosalt = True
         while nosalt :
             saltswap.update(state.context, nattempts = 1, cost = Dmu_insert)
-            n_wats ,n_ions, n_ions = saltswap.getIdentityCounts()
+            n_wats ,n_ions, n_ions = saltswap.get_identity_counts()
             nosalt = (n_ions == 0)
 
         # Get the parameters of the new anion and cations that were previously water
@@ -193,7 +193,7 @@ class TestParamPerturbations(object):
         # Now delete the anion and cation, using the negative of the original chemical potential
         while not nosalt :
             saltswap.update(state.context, nattempts = 1, cost = -Dmu_insert)
-            n_wats ,n_ions, n_ions = saltswap.getIdentityCounts()
+            n_wats ,n_ions, n_ions = saltswap.get_identity_counts()
             nosalt = (n_ions == 0)
 
         # Check that parameters of the deleted anion and cation match the orginal water parameters
