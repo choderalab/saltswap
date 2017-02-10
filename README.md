@@ -26,6 +26,7 @@ Initializing the sampler that will perform Markov chain Monte Carlo by mixing
 molecular dynamics moves that transform pairs of water molecules to anions and cations.
 
 ```
+from saltswap.swapper import MCMCSampler
 sampler = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem=800)
 ```                      
 

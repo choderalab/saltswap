@@ -425,113 +425,6 @@ class Swapper(object):
                 stateVector[i] = 2
         return stateVector
 
-    def attempt_identity_swap(self, context, penalty, saltmax=None):
-        """
-        Attempt the exchange of (possibly multiple) chemical species.
-
-        Parameters
-        ----------
-        context : simtk.openmm.Context
-            The context to update
-        penalty : list floats
-            The free energy to add salt (first index) and remove salt (second index)
-        saltmax : int
-            The maximum number of salt pairs that you wish to be added. If None, then the maximum number is the
-            number of water molecules divided by 2.
-        """
-        self.nattempted += 1
-
-        if type(penalty) == float:
-            penalty = [penalty, -penalty]
-
-        # If using _ncmc, store initial positions.
-        if self.nprop > 0:
-            initial_positions = context.getState(getPositions=True).getPositions()
-            initial_velocities = context.getState(getVelocities=True).getVelocities()
-
-        # Introducing a maximum capacity of salt molecules for the 'self adjusted mixture sampling calibration.
-        if saltmax == None:
-            saltmax = (len(self.mutable_residues) - len(self.mutable_residues) % 2) / 2
-
-        # Initializing the exponent of the acceptance test. Adding to it as we go along.
-        log_accept = 0.0
-        # Whether to delete or add salt by selecting random water molecules to turn into a cation and an anion or vice versa.
-        if (sum(self.stateVector == 1) == 0):
-            change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0], size=2, replace=False)
-            mode = "add salt"
-            log_accept -= np.log(2)  # Due to asymmetric proposal probabilities
-            cost = penalty[0]  # The free energy to remove salt and add 2 waters to bulk water
-        elif (sum(self.stateVector == 1) >= saltmax):
-            mode = "remove salt"
-            cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)
-            anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)
-            change_indices = np.array([cation_index, anion_index])
-            log_accept -= np.log(2)  # Due to asymmetric proposal probabilities
-            cost = penalty[1]
-        elif (np.random.random() < 0.5):
-            change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0], size=2, replace=False)
-            mode = "add salt"
-            cost = penalty[0]
-        else:
-            mode = "remove salt"
-            cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)
-            anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)
-            change_indices = np.array([cation_index, anion_index])
-            cost = penalty[1]
-
-        # Perform perturbation to remove or add salt with _ncmc and calculate energies
-        if self.nprop > 0:
-            try:
-                work, cumulative_work = self._ncmc(context, self.npert, self.nprop, mode, change_indices,
-                                                   propagator=self.propagator)
-            except Exception as detail:
-                work = 1000000000000.0  # If the simulation explodes during _ncmc, reject with high work
-                if detail[0] == 'Particle coordinate is nan':
-                    self.nan += 1
-                else:
-                    print(detail)
-        # Else make an instantaneous insertion or deletion.
-        else:
-            pot_initial = self._get_potential_energy(context)
-            self._update_forces(mode, change_indices, stage=self.npert)
-            self.forces_to_update.updateParametersInContext(context)
-            pot_final = self._get_potential_energy(context)
-            work = (pot_final - pot_initial) / self.kT
-            cumulative_work = 0.0
-
-        # Computing the work (already in units of KT)
-        if mode == "remove salt":
-            self.work_rm.append(work)
-            self.work_rm_per_step.append(cumulative_work)
-        else:
-            self.work_add.append(work)
-            self.work_add_per_step.append(cumulative_work)
-
-        # Cost = F_final - F_initial, where F_initial is the free energy to have the current number of salt molecules.
-        log_accept += -cost - work
-        # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
-        (nwats, ncation, nanion) = self.get_identity_counts()
-        if mode == 'add salt':
-            log_accept += np.log(1.0 * nwats * (nwats - 1) / (nanion + 1) / (nanion + 1))
-        else:
-            log_accept += np.log(1.0 * ncation * nanion / (nwats + 1) / (nwats + 2))
-
-        # Accept or reject:
-        if (log_accept > 0.0) or (random.random() < math.exp(log_accept)):
-            # Accept :D
-            self.naccepted += 1
-            self._set_identity(mode, change_indices)
-            if self.nprop > 0:
-                context.setVelocities(-context.getState(getVelocities=True).getVelocities(asNumpy=True))
-        else:
-            # Reject :(
-            # Revert parameters to their previous value
-            self._update_forces(mode, change_indices, stage=0)
-            self.forces_to_update.updateParametersInContext(context)
-            if self.nprop > 0:
-                context.setPositions(initial_positions)
-                context.setVelocities(initial_velocities)
-
     def _ncmc(self, context, npert, nprop, mode, exchange_indices, propagator='GHMC'):
         """
         Updates the context with either inserted or deleted salt using non-equilibrium candidate Monte Carlo.
@@ -643,6 +536,114 @@ class Swapper(object):
             self.cm_remover.setFrequency(self.cm_remover_freq)
 
         return work, cumulative_work
+
+    def attempt_identity_swap(self, context, penalty, saltmax=None):
+        """
+        Attempt the exchange of (possibly multiple) chemical species.
+
+        Parameters
+        ----------
+        context : simtk.openmm.Context
+            The context to update
+        penalty : list floats
+            The free energy to add salt (first index) and remove salt (second index)
+        saltmax : int
+            The maximum number of salt pairs that you wish to be added. If None, then the maximum number is the
+            number of water molecules divided by 2.
+        """
+        self.nattempted += 1
+
+        if type(penalty) == float:
+            penalty = [penalty, -penalty]
+
+        # If using _ncmc, store initial positions.
+        if self.nprop > 0:
+            initial_positions = context.getState(getPositions=True).getPositions()
+            initial_velocities = context.getState(getVelocities=True).getVelocities()
+
+        # Introducing a maximum capacity of salt molecules for the 'self adjusted mixture sampling calibration.
+        if saltmax == None:
+            saltmax = (len(self.mutable_residues) - len(self.mutable_residues) % 2) / 2
+
+        # Initializing the exponent of the acceptance test. Adding to it as we go along.
+        log_accept = 0.0
+        # Whether to delete or add salt by selecting random water molecules to turn into a cation and an anion or vice versa.
+        if (sum(self.stateVector == 1) == 0):
+            change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0], size=2, replace=False)
+            mode = "add salt"
+            log_accept -= np.log(2)  # Due to asymmetric proposal probabilities
+            cost = penalty[0]  # The free energy to remove salt and add 2 waters to bulk water
+        elif (sum(self.stateVector == 1) >= saltmax):
+            mode = "remove salt"
+            cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)
+            anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)
+            change_indices = np.array([cation_index, anion_index])
+            log_accept -= np.log(2)  # Due to asymmetric proposal probabilities
+            cost = penalty[1]
+        elif (np.random.random() < 0.5):
+            change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0], size=2, replace=False)
+            mode = "add salt"
+            cost = penalty[0]
+        else:
+            mode = "remove salt"
+            cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)
+            anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)
+            change_indices = np.array([cation_index, anion_index])
+            cost = penalty[1]
+
+        # Perform perturbation to remove or add salt with _ncmc and calculate energies
+        if self.nprop > 0:
+            try:
+                work, cumulative_work = self._ncmc(context, self.npert, self.nprop, mode, change_indices,
+                                                   propagator=self.propagator)
+            except Exception as detail:
+                work = 1000000000000.0  # If the simulation explodes during _ncmc, reject with high work
+                cumulative_work = 0.0
+                if detail[0] == 'Particle coordinate is nan':
+                    self.nan += 1
+                else:
+                    print(detail)
+        # Else make an instantaneous insertion or deletion.
+        else:
+            pot_initial = self._get_potential_energy(context)
+            self._update_forces(mode, change_indices, stage=self.npert)
+            self.forces_to_update.updateParametersInContext(context)
+            pot_final = self._get_potential_energy(context)
+            work = (pot_final - pot_initial) / self.kT
+            cumulative_work = 0.0
+
+        # Computing the work (already in units of KT)
+        if mode == "remove salt":
+            self.work_rm.append(work)
+            self.work_rm_per_step.append(cumulative_work)
+        else:
+            self.work_add.append(work)
+            self.work_add_per_step.append(cumulative_work)
+
+        # Cost = F_final - F_initial, where F_initial is the free energy to have the current number of salt molecules.
+        log_accept += -cost - work
+        # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
+        (nwats, ncation, nanion) = self.get_identity_counts()
+        if mode == 'add salt':
+            log_accept += np.log(1.0 * nwats * (nwats - 1) / (nanion + 1) / (nanion + 1))
+        else:
+            log_accept += np.log(1.0 * ncation * nanion / (nwats + 1) / (nwats + 2))
+
+        # Accept or reject:
+        if (log_accept > 0.0) or (random.random() < math.exp(log_accept)):
+            # Accept :D
+            self.naccepted += 1
+            self._set_identity(mode, change_indices)
+            if self.nprop > 0:
+                context.setVelocities(-context.getState(getVelocities=True).getVelocities(asNumpy=True))
+        else:
+            # Reject :(
+            # Revert parameters to their previous value
+            self._update_forces(mode, change_indices, stage=0)
+            self.forces_to_update.updateParametersInContext(context)
+            if self.nprop > 0:
+                context.setPositions(initial_positions)
+                context.setVelocities(initial_velocities)
 
     def _set_identity(self, mode, exchange_indices):
         """
