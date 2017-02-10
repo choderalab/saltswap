@@ -2,10 +2,11 @@ import numpy
 import simtk.unit
 import simtk.unit as units
 import simtk.openmm as mm
+
 kB = units.BOLTZMANN_CONSTANT_kB * units.AVOGADRO_CONSTANT_NA
 
-class GHMCIntegrator(mm.CustomIntegrator):
 
+class GHMCIntegrator(mm.CustomIntegrator):
     """
 
     This generalized hybrid Monte Carlo (GHMC) integrator is a modification of the GHMC integrator found
@@ -14,7 +15,8 @@ class GHMCIntegrator(mm.CustomIntegrator):
 
     """
 
-    def __init__(self, temperature=298.0 * simtk.unit.kelvin, collision_rate=1.0 / simtk.unit.picoseconds, timestep=1.0 * simtk.unit.femtoseconds, nsteps=1):
+    def __init__(self, temperature=298.0 * simtk.unit.kelvin, collision_rate=1.0 / simtk.unit.picoseconds,
+                 timestep=1.0 * simtk.unit.femtoseconds, nsteps=1):
         """
         Create a generalized hybrid Monte Carlo (GHMC) integrator.
 
@@ -64,7 +66,7 @@ class GHMCIntegrator(mm.CustomIntegrator):
         #
         self.addGlobalVariable("kT", kT)  # thermal energy
         self.addGlobalVariable("b", numpy.exp(-gamma * timestep))  # velocity mixing parameter
-        self.addPerDofVariable("sigma", 0) # velocity standard deviation
+        self.addPerDofVariable("sigma", 0)  # velocity standard deviation
         self.addGlobalVariable("ke", 0)  # kinetic energy
         self.addPerDofVariable("vold", 0)  # old velocities
         self.addPerDofVariable("xold", 0)  # old positions
@@ -78,7 +80,7 @@ class GHMCIntegrator(mm.CustomIntegrator):
         self.addGlobalVariable("naccept", 0)  # number accepted
         self.addGlobalVariable("ntrials", 0)  # number of Metropolization trials
         self.addPerDofVariable("x1", 0)  # position before application of constraints
-        self.addGlobalVariable("step", 0) # variable to keep track of number of propagation steps
+        self.addGlobalVariable("step", 0)  # variable to keep track of number of propagation steps
         self.addGlobalVariable("nsteps", nsteps)  # The number of iterations per integrator.step(1).
         #
         # Initialization.

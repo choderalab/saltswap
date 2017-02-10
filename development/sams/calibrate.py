@@ -3,7 +3,7 @@
 
 
 """
-Self adjusted mixture sampling for the SaltSwap class.
+Self adjusted mixture sampling for the Swapper class.
 
 Description
 -----------
@@ -43,7 +43,7 @@ import random
 import numpy as np
 import sys
 sys.path.append("/Users/rossg/Work/saltswap/saltswap")
-from saltswap import SaltSwap
+from swapper import Swapper
 
 import simtk.openmm as openmm
 import simtk.unit as unit
@@ -75,7 +75,7 @@ class MCMCSampler(object):
 
         proplist = ['GHMC','velocityVerlet']
         if propagator not in proplist:
-            raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
+            raise Exception('_ncmc propagator {0} not in supported list {1}'.format(propagator,proplist))
 
         # Setting the integrator:
         if saltsteps is not None:
@@ -86,7 +86,7 @@ class MCMCSampler(object):
             elif propagator=='velocityVerlet':
                 self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(1.0*unit.femtoseconds))
             else:
-                raise Exception('NCMC propagator {0} not in supported list {1}'.format(propagator,proplist))
+                raise Exception('_ncmc propagator {0} not in supported list {1}'.format(propagator,proplist))
             self.integrator.setCurrentIntegrator(0)
         else:
             self.integrator = integrators.GHMCIntegrator(temperature, 1/unit.picosecond, 2.0*unit.femtoseconds)
@@ -108,8 +108,8 @@ class MCMCSampler(object):
         self.context.setVelocitiesToTemperature(temperature)
 
         # Initialising the saltswap object
-        self.saltswap = SaltSwap(system=system,topology=topology,temperature=temperature, delta_chem=delta_chem,integrator=self.integrator,pressure=pressure,
-                                 npert=npert, nprop=nprop, propagator = propagator, waterName=waterName, cationName=cationName, anionName=anionName, debug=debug)
+        self.saltswap = Swapper(system=system, topology=topology, temperature=temperature, delta_chem=delta_chem, integrator=self.integrator, pressure=pressure,
+                                npert=npert, nprop=nprop, propagator = propagator, waterName=waterName, cationName=cationName, anionName=anionName, debug=debug)
 
     def gen_config(self,mdsteps=None):
         """
@@ -125,7 +125,7 @@ class MCMCSampler(object):
 
     def gen_label(self,saltsteps=None,delta_chem=None):
         """
-        Generate a new number of salt molecules via SaltSwap's code
+        Generate a new number of salt molecules via Swapper's code
 
         """
         if delta_chem == None:
@@ -192,7 +192,7 @@ class SaltSAMS(MCMCSampler):
         The find which distribution the Sampler is in, equal to the number of salt pairs. The number of salt pairs
         serves as the index for target density and free energy.
         """
-        (junk1,nsalt,junk2) = self.saltswap.getIdentityCounts()
+        (junk1,nsalt,junk2) = self.saltswap.get_identity_counts()
         self.nsalt = nsalt
         self.statetime.append(nsalt)
 
