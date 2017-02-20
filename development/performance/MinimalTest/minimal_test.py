@@ -40,9 +40,14 @@ def MC(force,context,i):
     else:
         switchon(force,context)
 
+def MC2(force,context,repeats=100):
+    for r in range(repeats):
+        switchoff(force, context)
+        switchon(force, context)
+
 # Global parameters for MD and MC iterations
-iterations = 200
-nsteps = 5000
+iterations = 50
+nsteps = 1
 
 f = open("timings.txt", 'w')
 f.write("iterations={0}, nsteps={1}, size={2}\n".format(iterations,nsteps,size))
@@ -50,6 +55,6 @@ f.write("Time in seconds\n")
 f.close()
 for i in range(iterations):
     f = open("timings.txt","a")
-    t = timeit.timeit('MDMC(force,context,integrator,nsteps,i)',setup="from __main__ import MDMC, force, context, integrator, i,nsteps", number=1)
+    t = timeit.timeit('MC2(force,context)',setup="from __main__ import MC2, force, context, integrator, i", number=1)
     f.write(str(t)+"\n")
     f.close()
