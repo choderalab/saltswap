@@ -36,12 +36,12 @@ Copyright and license
 """
 
 import numpy as np
-from swapper import Swapper
+from saltswap.swapper import Swapper
 import simtk.openmm as openmm
 import simtk.unit as unit
 from openmmtools import integrators
 
-from integrators import GHMCIntegrator
+from saltswap.integrators import GHMCIntegrator
 
 
 class MCMCSampler(object):
