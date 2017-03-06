@@ -3,9 +3,8 @@ from openmmtools.testsystems import WaterBox
 from simtk.openmm import app
 import numpy as np
 import copy
-from mcmc_samplers import MCMCSampler
-from swapper import strip_in_unit_system
-import pytest
+from saltswap.mcmc_samplers import MCMCSampler
+from saltswap.swapper import strip_in_unit_system
 
 class TestParamPerturbations(object):
     """

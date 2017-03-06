@@ -14,7 +14,7 @@ for insertions and deletions, the work required to insert and delete salt, and s
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Run an openmm simulation with salt exchange moves.")
+    parser = argparse.ArgumentParser(description="Run an openmm simulation with salt exchange moves on a box of water.")
     parser.add_argument('-o','--out',type=str,help="the filename of the PDB where configurations will be deposited",default="output.pdb")
     parser.add_argument('-d','--data',type=str,help="the filename of the text file where the simulation data will be stored",default="data.txt")
     parser.add_argument('-u','--deltachem',type=float,help="the difference between the chemical potential in kJ/mol of water and salt, default=700",default=700.0)

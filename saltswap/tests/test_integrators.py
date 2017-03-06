@@ -1,7 +1,7 @@
 from simtk import openmm, unit
 from openmmtools.testsystems import WaterBox
 import copy
-from integrators import GHMCIntegrator as GHMC
+from saltswap.integrators import GHMCIntegrator as GHMC
 import pytest
 
 def detect_cuda():
