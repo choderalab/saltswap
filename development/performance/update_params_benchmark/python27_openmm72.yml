@@ -1,0 +1,13 @@
+name: py27-minimal-openmm-7.2
+channels:
+- MDAnalysis
+- omnia
+- omnia/label/dev
+- defaults
+dependencies:
+- python=2.7
+- openmm=7.2
+- openmmtools
+- openmoltools
+
+

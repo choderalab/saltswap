@@ -1,0 +1,50 @@
+name: py35-minimal-openmm-7.1
+channels:
+- MDAnalysis
+- omnia
+- defaults
+dependencies:
+- alabaster=0.7.9=py35_0
+- babel=2.3.4=py35_0
+- docutils=0.13.1=py35_0
+- hdf5=1.8.17=1
+- imagesize=0.7.1=py35_0
+- jinja2=2.9.5=py35_0
+- libgcc=4.8.5=1
+- markupsafe=0.23=py35_2
+- mkl=2017.0.1=0
+- nose=1.3.7=py35_1
+- numexpr=2.6.2=np112py35_0
+- numpy=1.12.0=py35_0
+- numpydoc=0.6.0=py35_0
+- openssl=1.0.2k=0
+- pandas=0.19.2=np112py35_1
+- pip=9.0.1=py35_1
+- pygments=2.1.3=py35_0
+- pytables=3.3.0=np112py35_0
+- python=3.5.2=0
+- python-dateutil=2.6.0=py35_0
+- pytz=2016.10=py35_0
+- readline=6.2=2
+- requests=2.13.0=py35_0
+- scipy=0.18.1=np112py35_1
+- setuptools=27.2.0=py35_0
+- six=1.10.0=py35_0
+- snowballstemmer=1.2.1=py35_0
+- sphinx=1.5.1=py35_0
+- sqlite=3.13.0=0
+- tk=8.5.18=0
+- wheel=0.29.0=py35_0
+- xz=5.2.2=1
+- zlib=1.2.8=3
+- ambermini=16.16.0=7
+- fftw3f=3.3.4=2
+- mdtraj=1.8.0=np112py35_1
+- openmm=7.1.0rc1=py35_0
+- openmmtools=0.8.3=py35_1
+- openmoltools=0.7.4=py35_0
+- parmed=2.7.3=py35_0
+- pip:
+  - tables==3.3.0
+prefix: /Users/rossg/miniconda3/envs/minimal-openmm-7.1
+
