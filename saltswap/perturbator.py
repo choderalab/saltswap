@@ -4,16 +4,52 @@ import simtk.unit as unit
 
 class Perturbator(Swapper):
     """
-    Class to perturb non-bonded parameters in Swapper in order to calculate energies for MBAR and TI as well as for
-    estimation of the thermodynamic length along a path.
+    Class to alchemical perturb the non-bonded parameters in a Swapper object in order to calculate energies and
+    gradients with respect the to alchemical path. These values can be used to calculate relative hydration free
+    energies using MBAR and TI. The gradients can also be used to estimate the thermodynamic length along the alchemical
+    path.
     """
-    def __init__(self, topology, system, integrator, context, mode, stage, nstages=20, residues_indices=None, delta_chem=0.0, temperature=300 * unit.kelvin, pressure=1 * unit.atmospheres, nattempts_per_update=0,
-             nprop=0, propagator='GHMC', waterName='HOH', cationName='Na+', anionName='Cl-'):
+    def __init__(self, topology, system, integrator, context, mode, stage, nstages=20, residues_indices=None,
+                 temperature=300 * unit.kelvin, pressure=1 * unit.atmospheres, waterName='HOH',
+                 cationName='Na+', anionName='Cl-'):
 
-        super(Perturbator, self).__init__(system, topology, temperature, delta_chem, integrator, pressure=pressure,
-                                          nattempts_per_update=nattempts_per_update, npert=nstages - 1, nprop=nprop,
-                                          propagator=propagator, waterName=waterName, cationName=cationName,
-                                          anionName=anionName)
+        """
+        Initialize the alchemical class to perturb the non bonded parameters of a Swapper object.
+
+        Parameters
+        ----------
+        topology: simtk.openmm.topology
+            topology of the system being simulated
+        system: simtk.openmm.System
+            openmm system being simulated
+        integrator: simtk.openmm.Integrator
+            openmm integrator that is used to propagate the dynamics
+        context: simtk.openmm.context
+            openmm context of the simulation system
+        mode: str
+            Whether to calculate the free energy to add salt or remove it. Either 'add salt' or 'remove salt'.
+        stage: int
+            the index of the alchemical state that will be simulated. Indexing starts at 0 and ends at nstates - 1.
+        nstages: int
+            the total number of alchemical intermediates along the alchemical path
+        residues_indices: list like object with 2 integers
+            the indexes of the two residues that will be transformed either to or from salt. Two inth
+        temperature: simtk.unit
+            the temperature of simulation
+        pressure: simtk.unit
+            the simulation pressure
+        waterName: str
+            the name of the water molecule residues
+        cationName: str
+            the name of the cation residue
+        anionName: str
+            the name of anion residue
+        """
+
+        super(Perturbator, self).__init__(system=system, topology=topology, temperature=temperature, delta_chem=0.0,
+                                          integrator=integrator, pressure=pressure, nattempts_per_update=0,
+                                          npert=nstages - 1, nprop=0, propagator='GHMC', waterName=waterName,
+                                          cationName=cationName, anionName=anionName)
 
         self.context = context
         self.nstages = nstages
@@ -182,3 +218,34 @@ class Perturbator(Swapper):
         self.forces_to_update.updateParametersInContext(self.context)
 
         return gradient
+
+    def gradients_all_stages(self, dlambda=0.001, in_thermal_units=True):
+        """
+        Estimate the gradient with respect to alchemical path at each state given the current configuration
+
+        Parameter
+        ---------
+        dlambda: float
+            the fraction along the alchemical path that's used in the finite difference approximation to the gradient
+
+        Returns
+        -------
+        gradients: numpy array
+            array of the estimate gradients at each alchemical state
+        """
+
+        if in_thermal_units:
+            denominator = self.kT
+        else:
+            denominator = 1.0
+
+        # Perturbing the alchemical states and calculating the gradient
+        gradients = np.zeros(self.nstages)
+        for stage in range(self.nstages):
+            self.change_stage(stage)
+            gradients[stage] = self.estimate_energy_gradient(dlambda) / denominator
+
+        # Return back to the current state
+        self.change_stage(self.stage)
+
+        return gradients
