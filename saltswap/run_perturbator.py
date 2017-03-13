@@ -118,7 +118,7 @@ if __name__ == "__main__":
 
     # Create a DCD file
     dcd_filename = args.out + str(args.state) + '.dcd'
-    dcdfile = open(dcd_filename, 'bw')
+    dcdfile = open(dcd_filename, 'wb')
     dcd = app.DCDFile(file=dcdfile, topology=wbox.topology, dt=2)
     dcd.writeModel(positions=positions)
 
