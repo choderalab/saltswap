@@ -9,7 +9,8 @@ from saltswap.perturbator import Perturbator
 Scrip to run the Perturbator class on a box of water
 """
 
-def create_example(stage=0, nstages=20, mode='add salt', size=25.0, platform='CPU', temperature=300 * unit.kelvin, pressure=1 * unit.atmospheres):
+def create_example(stage=0, nstages=20, mode='add salt', size=25.0, platform='CPU', temperature=300 * unit.kelvin,
+                   pressure=1 * unit.atmospheres, pme='True'):
     """
     Create an alchemical perturbation object for a box of water. The outputs will allow the computation of free energies
     and gradients along an alchemical salt insertion/deletion path.
@@ -31,6 +32,8 @@ def create_example(stage=0, nstages=20, mode='add salt', size=25.0, platform='CP
         the temperature of the simulation
     pressure: simtk.unit
         the pressure of the simulation
+    pme: bool
+        whether to treat long range electorstatics with PME (true) or reaction field (false).
 
     Returns
     -------
@@ -40,7 +43,11 @@ def create_example(stage=0, nstages=20, mode='add salt', size=25.0, platform='CP
         the openmm object that can propagate the dynamics
     """
     # Create a box of water
-    wbox = WaterBox(box_edge=size * unit.angstrom, nonbondedMethod=app.PME, cutoff=10 * unit.angstrom, ewaldErrorTolerance=1E-4)
+    if pme:
+        wbox = WaterBox(box_edge=size * unit.angstrom, nonbondedMethod=app.PME, cutoff=10 * unit.angstrom,
+                        ewaldErrorTolerance=1E-4)
+    else:
+        wbox = WaterBox(box_edge=size * unit.angstrom, nonbondedMethod=app.CutoffPeriodic, cutoff=10 * unit.angstrom)
     integrator = openmm.LangevinIntegrator(temperature, 1.0 / unit.picoseconds, 2.0 * unit.femtoseconds)
     barostat = openmm.MonteCarloBarostat(pressure, temperature)
     wbox.system.addForce(barostat)
@@ -64,7 +71,7 @@ def create_example(stage=0, nstages=20, mode='add salt', size=25.0, platform='CP
     perturber = Perturbator(topology=wbox.topology, system=wbox.system, integrator=integrator, context=context,
                             mode=mode, stage=stage, nstages=nstages, temperature=temperature, pressure=pressure)
 
-    return perturber, integrator
+    return perturber, integrator, wbox
 
 if __name__ == "__main__":
     import argparse
@@ -85,20 +92,42 @@ if __name__ == "__main__":
                         help="the number of alchemical intermediates", default=20)
     parser.add_argument('--platform', type=str, choices = ['CPU','CUDA','OpenCL'],
                         help="the platform where the simulation will be run, default=CPU", default='CPU')
+    parser.add_argument('--reaction_field', action='store_true',
+                        help="whether to treat long-range electrostatics with reaction field, default=False", default=False)
     args = parser.parse_args()
 
     # Initialize
-    perturber, integrator = create_example(stage=args.state, nstages=args.nstates, mode='add salt', size=args.size,
-                                           platform=args.platform)
+    if args.reaction_field:
+        perturber, integrator, wbox = create_example(stage=args.state, nstages=args.nstates, mode='add salt',
+                                                    size=args.size, platform=args.platform, pme=False)
+    else:
+        perturber, integrator, wbox = create_example(stage=args.state, nstages=args.nstates, mode='add salt',
+                                                    size=args.size, platform=args.platform, pme=True)
+
 
     # Equilibrate
     integrator.step(args.equilibration)
+
+    # Open PDB file for saving the topology.
+    pdb_filename = args.out + str(args.state) + '.pdb'
+    pdbfile = open(pdb_filename, 'w')
+    app.PDBFile.writeHeader(wbox.topology, file=pdbfile)
+    positions = perturber.context.getState(getPositions=True, enforcePeriodicBox=True).getPositions(asNumpy=True)
+    app.PDBFile.writeModel(wbox.topology, positions, file=pdbfile, modelIndex=0)
+    pdbfile.close()
+
+    # Create a DCD file
+    dcd_filename = args.out + str(args.state) + '.dcd'
+    dcdfile = open(dcd_filename, 'bw')
+    dcd = app.DCDFile(file=dcdfile, topology=wbox.topology, dt=2)
+    dcd.writeModel(positions=positions)
 
     # Pre-assignment
     alchemical_energies = np.zeros((args.iterations, args.nstates))
     alchemical_gradients = np.zeros((args.iterations, args.nstates))
 
     # Run simulation and record energies and gradients
+    save_freq = 10
     for i in range(args.iterations):
         integrator.step(args.steps)
         # Save the energies at each alchemical state that have been calculated with the configuration at the current state
@@ -107,9 +136,15 @@ if __name__ == "__main__":
         # Save the gradient at the current state
         alchemical_gradients[i,:] = perturber.gradients_all_stages(in_thermal_units=True)
         # Save data every 10 iterations
-        if i % 10 == 0:
+        if i % save_freq == 0:
+            # Save energies and gradients
             np.save(args.out + '_energies', alchemical_energies)
             np.save(args.out + '_grads', alchemical_gradients)
+
+            # Save trajectory
+            positions = perturber.context.getState(getPositions=True, enforcePeriodicBox=True).getPositions(asNumpy=True)
+            dcd.writeModel(positions=positions)
+    dcdfile.close()
 
     # Save data for the last time
     np.save(args.out + '_energies', alchemical_energies)
