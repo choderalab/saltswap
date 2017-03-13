@@ -46,23 +46,13 @@ from saltswap.integrators import GHMCIntegrator
 
 class MCMCSampler(object):
     """
-    Wrapper for MD and saltswap moves.
-
-    Attributes
-    ----------
-    n_adaptations : int
-        Number of times the relative free energies have been adapted.
-    state_counts : np.array
-        Histogram of the expected weights of current states.
-    References
-    ----------
-
+    Wrapper for MD and swapper moves.
     """
 
     def __init__(self, system, topology, positions, temperature=300 * unit.kelvin, pressure=1 * unit.atmospheres,
-                 delta_chem=0, mdsteps=2000, saltsteps=0, volsteps=25,
-                 platform='CPU', npert=1, nprop=0, ncmc_timestep=1.0 * unit.femtoseconds, propagator='GHMC',
-                 waterName="HOH", cationName='Na+', anionName='Cl-'):
+                 delta_chem=0, mdsteps=2000, saltsteps=0, volsteps=25, saltmax=None, platform='CPU', npert=1, nprop=0,
+                 ncmc_timestep=1.0 * unit.femtoseconds, propagator='GHMC', waterName='HOH', cationName='Na+',
+                 anionName='Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
 
@@ -81,8 +71,17 @@ class MCMCSampler(object):
         pressure : simtk.unit.Quantity compatible with atmospheres, optional, default=None
             For explicit solvent simulations, the pressure.
         delta_chem : float or unit.Quantity
-            The difference in chemical potential for swapping 2 water molecules for Na Cl.
-            If it is a float, it is assumed to be in units of kT.
+            The difference in chemical potential for swapping 2 water molecules for Na Cl. If it is a float, it is
+            assumed to be in thermal.
+        mdsteps: int
+            The number steps of molecular dynamics to take during one iteration
+        saltsteps: int
+            The number of insertion/deletion attempts to make during one iteration
+        volsteps: int
+            The frequency of volume moves during a series of MD steps
+        saltmax: int
+            The maximum number of salt ion pairs that can be inserted into the system. If None, then the maximum number
+            is approximately half the number of water molecules.
         npert : integer
             Number of _ncmc perturbation kernels. Set to 1 for instantaneous switching
         nprop : integer
@@ -106,6 +105,7 @@ class MCMCSampler(object):
         self.volsteps = volsteps
         self.saltsteps = saltsteps
         self.nprop = nprop
+        self.saltmax = saltmax
 
         # Exceptions
         proplist = ['GHMC', 'GHMC_old', 'GHMC_save_work_per_step', 'velocityVerlet']
@@ -201,9 +201,9 @@ class MCMCSampler(object):
         if self.nprop != 0:
             self.integrator.setCurrentIntegrator(1)
         if saltsteps == None:
-            self.saltswap.update(self.context, nattempts=self.saltsteps, cost=cost)
+            self.saltswap.update(self.context, nattempts=self.saltsteps, cost=cost, saltmax=self.saltmax)
         else:
-            self.saltswap.update(self.context, nattempts=saltsteps, cost=cost)
+            self.saltswap.update(self.context, nattempts=saltsteps, cost=cost, saltmax=self.saltmax)
 
     def move(self, mdsteps=None, saltsteps=None, delta_chem=None):
         """
