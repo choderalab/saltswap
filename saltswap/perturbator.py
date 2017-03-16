@@ -1,6 +1,7 @@
 import numpy as np
 from saltswap.swapper import Swapper
 import simtk.unit as unit
+from copy import deepcopy
 
 class Perturbator(Swapper):
     """
@@ -234,18 +235,19 @@ class Perturbator(Swapper):
             array of the estimate gradients at each alchemical state
         """
 
+        original_state = deepcopy(self.stage)
+
         if in_thermal_units:
             denominator = self.kT
         else:
             denominator = 1.0
 
         # Perturbing the alchemical states and calculating the gradient
-        gradients = np.zeros(self.nstages)
+        gradients = []
         for stage in range(self.nstages):
             self.change_stage(stage)
-            gradients[stage] = self.estimate_energy_gradient(dlambda) / denominator
-
+            gradients.append(self.estimate_energy_gradient(dlambda) / denominator)
         # Return back to the current state
-        self.change_stage(self.stage)
+        self.change_stage(original_state)
 
         return gradients

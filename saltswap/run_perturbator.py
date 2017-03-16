@@ -134,7 +134,8 @@ if __name__ == "__main__":
         energies = perturber.perturb_all_states(in_thermal_units=True)
         alchemical_energies[i,:] = np.array(energies)
         # Save the gradient at the current state
-        alchemical_gradients[i,:] = perturber.gradients_all_stages(in_thermal_units=True)
+        gradients =  perturber.gradients_all_stages(in_thermal_units=True)
+        alchemical_gradients[i,:] = np.array(gradients)
         # Save data every 10 iterations
         if i % save_freq == 0:
             # Save energies and gradients
