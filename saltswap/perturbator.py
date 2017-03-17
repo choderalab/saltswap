@@ -123,15 +123,15 @@ class Perturbator(Swapper):
 
         # Calculate energy
         logp, pot_energy, kin_energy = self._compute_log_probability(self.context)
-        total_energy = pot_energy + kin_energy
+
         if in_thermal_units:
-            total_energy = total_energy / self.kT
+            pot_energy = pot_energy / self.kT
 
         # Return to initial state
         self._update_forces(self.mode, self.residues_indices, stage=self.state)
         self.forces_to_update.updateParametersInContext(self.context)
 
-        return total_energy
+        return pot_energy
 
     def perturb_all_states(self, in_thermal_units=True):
         """
