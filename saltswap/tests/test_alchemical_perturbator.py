@@ -40,7 +40,7 @@ class TestPerturbator(object):
         context.setPositions(wbox.positions)
 
         perturber = Perturbator(topology=wbox.topology, system=wbox.system, integrator=integrator, context=context,
-                                mode='add salt', stage=stage, nstages=nstages, temperature=temperature, pressure=pressure)
+                                mode='add salt', state=stage, nstates=nstages, temperature=temperature, pressure=pressure)
 
         return perturber
 
