@@ -122,7 +122,7 @@ class MCMCSampler(object):
         if nprop != 0:
             self.integrator = openmm.CompoundIntegrator()
             self.integrator.addIntegrator(
-                GHMCIntegrator(temperature, 1 / unit.picosecond, 2.0 * unit.femtoseconds, nsteps=1))
+                GHMCIntegrator(temperature, 1 / unit.picosecond, ncmc_timestep, nsteps=1))
             if propagator == 'GHMC':
                 self.integrator.addIntegrator(
                     GHMCIntegrator(temperature, 1 / unit.picosecond, ncmc_timestep, nsteps=nprop))
