@@ -3,6 +3,8 @@ from simtk.openmm import app
 from openmmtools.testsystems import WaterBox
 from time import time
 from saltswap.mcmc_samplers import MCMCSampler
+from bams.sams_adapter import SAMSAdaptor
+from bams.bayes_adaptor import BayesAdaptor
 import numpy as np
 
 """
@@ -15,14 +17,14 @@ for insertions and deletions, the work required to insert and delete salt, and s
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Run an openmm simulation with salt exchange moves on a box of water.")
-    parser.add_argument('-o','--out',type=str,help="the filename of the PDB where configurations will be deposited",default="output")
+    parser.add_argument('-o','--out',type=str,help="the naming scheme of the output files where configurations will be deposited",default="output")
     parser.add_argument('-d','--data',type=str,help="the filename of the text file where the simulation data will be stored",default="data.txt")
-    parser.add_argument('-u','--deltachem',type=float,help="the applied chemical potential in thermal units, default=700",default=700.0)
+    parser.add_argument('-u','--deltachem',type=float,help="the initial applied chemical potential in thermal units, default=300",default=300.0)
     parser.add_argument('-c','--cycles',type=int,help="the number of cycles between MD and MCMC salt-water swaps, default=100",default=200)
     parser.add_argument('-s','--steps',type=int,help="the number of MD steps per cycle, default=25000",default=2000)
     parser.add_argument('-a','--attempts',type=int,help="the number of salt-water swap moves attempted, default=100",default=10)
     parser.add_argument('-e','--equilibration',type=int,help="the number of equilibration steps, default=1000",default=1000)
-    parser.add_argument('--saltmax',type=int,help="the maximum number of salt pairs that will be inserted, default=None",default=None)
+    parser.add_argument('--saltmax',type=int,help="the maximum number of salt pairs that will be inserted, default=1", default=1)
     parser.add_argument('--npert',type=int,help="the number of _ncmc perturbation kernels, default=1000",default=1000)
     parser.add_argument('--nprop',type=int,help="the number of propagation kernels per perturbation, default=1",default=1)
     parser.add_argument('--timestep',type=float,help='the _ncmc propagator timstep in femtoseconds, default=1.0',default=1.0)
@@ -37,13 +39,13 @@ if __name__ == "__main__":
     pressure = 1 * unit.atmospheres
 
     # Creating the test system, with non-bonded switching function and lower than standard PME error tolerance
-    wbox = WaterBox(box_edge=size,nonbondedMethod=app.PME,cutoff=9*unit.angstrom,ewaldErrorTolerance=1E-5)
+    wbox = WaterBox(box_edge=size,nonbondedMethod=app.PME,cutoff=9*unit.angstrom,ewaldErrorTolerance=1E-4)
 
     # Initialize the class that can sample over MD and salt-water exchanges.
     timestep = args.timestep * unit.femtoseconds
     sampler = MCMCSampler(wbox.system, wbox.topology, wbox.positions, temperature=temperature, pressure=pressure,
                           saltmax=args.saltmax, npert=args.npert, nprop=args.nprop, propagator=args.propagator,
-                          ncmc_timestep = timestep, delta_chem=args.deltachem, mdsteps=args.steps,
+                          ncmc_timestep=timestep, delta_chem=args.deltachem, mdsteps=args.steps,
                           saltsteps=args.attempts, platform=args.platform)
 
     ghmc_equilibrium = sampler.integrator.getIntegrator(0)
@@ -56,7 +58,7 @@ if __name__ == "__main__":
     f = open(args.data, 'w')
     s = "Niterations = {:4}, Nsteps = {:7}, Nattemps = {:3}, Dchem = {:5}, Nperts = {:5}, Nprops = {:3}\n".format(args.cycles, args.steps, args.attempts, args.deltachem, args.npert, args.nprop)
     f.write(s)
-    s = "\n{:4} {:5} {:5} {:4} {:9} {:9} {:6}\n".format("Step","Nwats","Nsalt","AccProb", "GHMC NCMC acc", "GHMC Equil Acc", "Time (s)")
+    s = "\n{:4} {:5} {:5} {:4} {:9} {:9} {:6}  {:6}\n".format("Step","Nwats","Nsalt","AccProb", "GHMC NCMC acc", "GHMC Equil Acc", "Time (s)", "Estimate")
     f.write(s)
     f.close()
 
@@ -70,15 +72,45 @@ if __name__ == "__main__":
     dcdfile = open(args.out + '.dcd', 'wb')
     dcd = app.DCDFile(file=dcdfile, topology=wbox.topology, dt=2)
 
-    iterations = args.cycles          # Number of rounds of MD and constant salt moves
+    # Opening a file to store work data for removing salt
+    f = open("work_rm_"+args.data,"w")
+    f.write("Total work required to remove salt per attempt\n")
+    s = "Niterations = {:4}, Nsteps = {:7}, Nattemps = {:3}, Dchem = {:5}, Nperts = {:5}, Nprops= {:3}\n".format(args.cycles,args.steps,args.attempts,args.deltachem,args.npert,args.nprop)
+    f.write(s)
+    f.close()
+
+    # Opening a file to store work data for adding salt
+    f = open("work_add_"+args.data,"w")
+    f.write("Total work required to add salt per attempt\n")
+    s = "Niterations = {:4}, Nsteps = {:7}, Nattemps = {:3}, Dchem = {:5}, Nperts = {:5}, Nprops= {:3}\n".format(args.cycles,args.steps,args.attempts,args.deltachem,args.npert,args.nprop)
+    f.write(s)
+    f.close()
+
+    # Initialize SAMS adaptor
+    zetas = np.arange(args.saltmax + 1) * args.deltachem
+    adaptor = SAMSAdaptor(nstates=args.saltmax + 1, zetas=zetas, beta=0.6, flat_hist=0.2)
+    histogram = np.zeros(args.saltmax + 1)
+
+    print(args.deltachem)
     # Running simulation
+    z = np.array([0, args.deltachem])
+    iterations = args.cycles          # Number of rounds of MD and constant salt moves
     startTime = time()
     for i in range(iterations):
         iter_start = time()
-        sampler.move()
+        sampler.move(delta_chem=float(z[1]))
         iter_time = time() - iter_start
         # Saving acceptance probability data:
         cnts = sampler.saltswap.get_identity_counts()
+
+        # Update SAMS estimator
+        state = cnts[1]
+        noisy = np.zeros(args.saltmax + 1)
+        noisy[state] = 1
+        histogram[state] += 1
+        z = adaptor.update(state=state, noisy_observation=noisy, histogram=histogram)
+
+        # Save data
         acc = sampler.saltswap.get_acceptance_probability()
         if args.nprop != 0 and args.propagator == 'GHMC':
             ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ghmc))
@@ -87,9 +119,23 @@ if __name__ == "__main__":
         equil_acc = ghmc_equilibrium.getGlobalVariableByName('naccept') / ghmc_equilibrium.getGlobalVariableByName('ntrials')
         sampler.saltswap.naccepted_ghmc = []
         f = open(args.data, 'a')
-        s = "{:4} {:5} {:5}   {:0.2f}      {:0.2f}      {:0.2f}     {:0.1f}\n".format(i, cnts[0], cnts[1], round(acc,2), round(ghmc_acc,2), round(equil_acc,2), iter_time)
+        s = "{:4} {:5} {:5}   {:0.2f}         {:0.2f}      {:0.2f}         {:0.1f}      {:0.3f}\n".format(i, cnts[0], cnts[1], round(acc,2), round(ghmc_acc,2), round(equil_acc,2), iter_time, z[1])
         f.write(s)
         f.close()
+
+        # Saving work data for each of the nattempts and reseting:
+        if len(sampler.saltswap.work_add) >= 0:
+            f = open("work_add_"+args.data,"a")
+            f.writelines("%s " % item  for item in sampler.saltswap.work_add)
+            f.write("\n")
+            f.close()
+            sampler.saltswap.work_add=[]
+        if len(sampler.saltswap.work_rm) >= 0:
+            f = open("work_rm_"+args.data,"a")
+            f.writelines("%s " % item  for item in sampler.saltswap.work_rm)
+            f.write("\n")
+            f.close()
+            sampler.saltswap.work_rm=[]
 
         # Save trajectory
         positions = sampler.context.getState(getPositions=True, enforcePeriodicBox=True).getPositions(asNumpy=True)
