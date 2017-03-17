@@ -10,7 +10,7 @@ class Perturbator(Swapper):
     energies using MBAR and TI. The gradients can also be used to estimate the thermodynamic length along the alchemical
     path.
     """
-    def __init__(self, topology, system, integrator, context, mode, stage, nstages=20, residues_indices=None,
+    def __init__(self, topology, system, integrator, context, mode, state, nstates=20, residues_indices=None,
                  temperature=300 * unit.kelvin, pressure=1 * unit.atmospheres, waterName='HOH',
                  cationName='Na+', anionName='Cl-'):
 
@@ -29,9 +29,9 @@ class Perturbator(Swapper):
             openmm context of the simulation system
         mode: str
             Whether to calculate the free energy to add salt or remove it. Either 'add salt' or 'remove salt'.
-        stage: int
+        state: int
             the index of the alchemical state that will be simulated. Indexing starts at 0 and ends at nstates - 1.
-        nstages: int
+        nstates: int
             the total number of alchemical intermediates along the alchemical path
         residues_indices: list like object with 2 integers
             the indexes of the two residues that will be transformed either to or from salt. Two inth
@@ -49,12 +49,12 @@ class Perturbator(Swapper):
 
         super(Perturbator, self).__init__(system=system, topology=topology, temperature=temperature, delta_chem=0.0,
                                           integrator=integrator, pressure=pressure, nattempts_per_update=0,
-                                          npert=nstages - 1, nprop=0, propagator='GHMC', waterName=waterName,
+                                          npert=nstates - 1, nprop=0, propagator='GHMC', waterName=waterName,
                                           cationName=cationName, anionName=anionName)
 
         self.context = context
-        self.nstages = nstages
-        self.stage = stage
+        self.nstates = nstates
+        self.state = state
 
         mode_list = ('remove salt', 'add salt')
         if mode in mode_list:
@@ -93,7 +93,7 @@ class Perturbator(Swapper):
             The index of the parameter path to which parameters will be updated to
 
         """
-        self.stage = new_stage
+        self.state = new_stage
         self._update_forces(self.mode, self.residues_indices, stage=new_stage)
         self.forces_to_update.updateParametersInContext(self.context)
 
@@ -122,15 +122,16 @@ class Perturbator(Swapper):
         self.forces_to_update.updateParametersInContext(self.context)
 
         # Calculate energy
-        energy = self._get_potential_energy(self.context)
+        logp, pot_energy, kin_energy = self._compute_log_probability(self.context)
+        total_energy = pot_energy + kin_energy
         if in_thermal_units:
-            energy = energy / self.kT
+            total_energy = total_energy / self.kT
 
         # Return to initial state
-        self._update_forces(self.mode, self.residues_indices, stage=self.stage)
+        self._update_forces(self.mode, self.residues_indices, stage=self.state)
         self.forces_to_update.updateParametersInContext(self.context)
 
-        return energy
+        return total_energy
 
     def perturb_all_states(self, in_thermal_units=True):
         """
@@ -146,7 +147,7 @@ class Perturbator(Swapper):
         energies: list
             A list of all the configuration energies at every stage along the parameter path
         """
-        return [self.perturb_energy(stage, in_thermal_units) for stage in range(self.nstages)]
+        return [self.perturb_energy(stage, in_thermal_units) for stage in range(self.nstates)]
 
     def _update_force_along_path(self, param_path, residue_index, dlambda=0.001):
         """
@@ -161,25 +162,25 @@ class Perturbator(Swapper):
         dlambda: float
             the fraction along the path along which the parameter will be linearly extrapolated.
         """
-        if self.stage != self.nstages - 1:
+        if self.state != self.nstates - 1:
             along = 1
         else:
             along = -1
         # The fraction along the parameter path adjacent stages are, assuming the stages are spaced linearly along the
         # path.
-        delta_path = float(along) / float(self.nstages)
+        delta_path = float(along) / float(self.nstates)
 
         molecule = [atom for atom in self.mutable_residues[residue_index].atoms()]
         atm_index = 0
         for atom in molecule:
-            param_gradient = (param_path[atm_index]["charge"][self.stage + along] - param_path[atm_index]["charge"][self.stage]) / delta_path
-            charge = param_path[atm_index]["charge"][self.stage] + dlambda * param_gradient
+            param_gradient = (param_path[atm_index]["charge"][self.state + along] - param_path[atm_index]["charge"][self.state]) / delta_path
+            charge = param_path[atm_index]["charge"][self.state] + dlambda * param_gradient
 
-            param_gradient = (param_path[atm_index]["sigma"][self.stage + along] - param_path[atm_index]["sigma"][self.stage]) / delta_path
-            sigma = param_path[atm_index]["sigma"][self.stage] + dlambda * param_gradient
+            param_gradient = (param_path[atm_index]["sigma"][self.state + along] - param_path[atm_index]["sigma"][self.state]) / delta_path
+            sigma = param_path[atm_index]["sigma"][self.state] + dlambda * param_gradient
 
-            param_gradient = (param_path[atm_index]["epsilon"][self.stage + along] - param_path[atm_index]["epsilon"][self.stage]) / delta_path
-            epsilon = param_path[atm_index]["epsilon"][self.stage] + dlambda * param_gradient
+            param_gradient = (param_path[atm_index]["epsilon"][self.state + along] - param_path[atm_index]["epsilon"][self.state]) / delta_path
+            epsilon = param_path[atm_index]["epsilon"][self.state] + dlambda * param_gradient
 
             self.forces_to_update.setParticleParameters(atom.index, charge=charge, sigma=sigma, epsilon=epsilon)
             atm_index += 1
@@ -215,7 +216,7 @@ class Perturbator(Swapper):
         gradient = (new_energy - energy) / dlambda
 
         # Return to initial state
-        self._update_forces(self.mode, self.residues_indices, stage=self.stage)
+        self._update_forces(self.mode, self.residues_indices, stage=self.state)
         self.forces_to_update.updateParametersInContext(self.context)
 
         return gradient
@@ -235,7 +236,7 @@ class Perturbator(Swapper):
             array of the estimate gradients at each alchemical state
         """
 
-        original_state = deepcopy(self.stage)
+        original_state = deepcopy(self.state)
 
         if in_thermal_units:
             denominator = self.kT
@@ -244,7 +245,7 @@ class Perturbator(Swapper):
 
         # Perturbing the alchemical states and calculating the gradient
         gradients = []
-        for stage in range(self.nstages):
+        for stage in range(self.nstates):
             self.change_stage(stage)
             gradients.append(self.estimate_energy_gradient(dlambda) / denominator)
         # Return back to the current state

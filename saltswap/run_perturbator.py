@@ -69,7 +69,7 @@ def create_example(stage=0, nstages=20, mode='add salt', size=25.0, platform='CP
     context.setVelocitiesToTemperature(temperature)
 
     perturber = Perturbator(topology=wbox.topology, system=wbox.system, integrator=integrator, context=context,
-                            mode=mode, stage=stage, nstages=nstages, temperature=temperature, pressure=pressure)
+                            mode=mode, state=stage, nstates=nstages, temperature=temperature, pressure=pressure)
 
     return perturber, integrator, wbox
 
@@ -103,7 +103,11 @@ if __name__ == "__main__":
     else:
         perturber, integrator, wbox = create_example(stage=args.state, nstages=args.nstates, mode='add salt',
                                                     size=args.size, platform=args.platform, pme=True)
-
+    # Save which residues are being perturbed.
+    f = open('residues.txt', 'w')
+    s = 'Residues: {0}'.format(perturber.residues_indices )
+    f.write(s)
+    f.close()
 
     # Equilibrate
     integrator.step(args.equilibration)
