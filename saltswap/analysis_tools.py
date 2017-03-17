@@ -38,7 +38,7 @@ def read_data(filename):
         #print('nsalt', int(filelines[i][13:18].strip()))
         Accprob.append(float(filelines[i][19:24].strip()))
         #print('acc', filelines[i][19:24].strip())
-        time.append(float(filelines[i][40:60].strip()))
+        time.append(float(filelines[i][55:68].strip()))
         #print('time', filelines[i][40:60].strip())
     return np.vstack((np.array(Nwats), np.array(Nsalt), np.array(Accprob), np.array(time)))
 
