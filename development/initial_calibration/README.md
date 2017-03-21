@@ -2,7 +2,7 @@
 
 ### Aims
 1. See if `saltswap` simulations produced reasonable results when salt molecules were titrated in by varying the chemical potential.
-2. To make a preliminary test of using SAMS to calculate relative  hydration free energies of salt and water.
+2. Test SAMS to for calculate relative hydration free energies of salt and water.
 
 ### Results in brief
  * The most stable simulations were produced using the `CUDA` GPU kernal. More work is required to verify this. 
