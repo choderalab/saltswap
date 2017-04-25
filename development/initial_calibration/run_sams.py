@@ -44,7 +44,7 @@ if __name__ == "__main__":
     # Initialize the class that can sample over MD and salt-water exchanges.
     timestep = args.timestep * unit.femtoseconds
     sampler = MCMCSampler(wbox.system, wbox.topology, wbox.positions, temperature=temperature, pressure=pressure,
-                          saltmax=args.saltmax, npert=args.npert, nprop=args.nprop, propagator=args.propagator,
+                          saltmax=args.saltmax, npert=args.npert, nprop=args.nprop, ncmc_propagator=args.propagator,
                           ncmc_timestep=timestep, delta_chem=args.deltachem, mdsteps=args.steps,
                           saltsteps=args.attempts, platform=args.platform)
 

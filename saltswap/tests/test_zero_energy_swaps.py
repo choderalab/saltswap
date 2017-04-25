@@ -75,7 +75,7 @@ class TestZeroEnergySwaps(object):
 
         # Create the box of water to simulate
         wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
-        dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu, nprop = 1, npert = 5, propagator='GHMC')
+        dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu, nprop = 1, npert = 5, ncmc_propagator='GHMC')
         dummystate.saltswap.cation_parameters = dummystate.saltswap.water_parameters    # Setting the cation parameters to water's
         dummystate.saltswap.anion_parameters = dummystate.saltswap.water_parameters     # Setting the anion parameters to water's
         dummystate.saltswap._set_parampath()     # Recalculating the peturbation path for new paramters
@@ -112,7 +112,7 @@ class TestZeroEnergySwaps(object):
 
         # Create the box of water to simulate
         wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
-        dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu, nprop = 1, npert = 5, propagator='velocityVerlet')
+        dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu, nprop = 1, npert = 5, ncmc_propagator='velocityVerlet')
         dummystate.saltswap.cation_parameters = dummystate.saltswap.water_parameters    # Setting the cation parameters to water's
         dummystate.saltswap.anion_parameters = dummystate.saltswap.water_parameters     # Setting the anion parameters to water's
         dummystate.saltswap._set_parampath()     # Recalculating the peturbation path for new paramters
