@@ -136,13 +136,13 @@ class Swapper(object):
         pressure : simtk.unit.Quantity compatible with atmospheres, optional, default=None
             For explicit solvent simulations, the pressure.
         npert : integer
-            Number of _ncmc perturbation kernels. Set to 1 for instantaneous switching
+            Number of ncmc perturbation kernels. Set to 1 for instantaneous switching
         nprop : integer
-            Number of propagation kernels (MD steps) per _ncmc perturbation kernel. Set to 0 for instantaneous switching
+            Number of propagation kernels (MD steps) per ncmc perturbation kernel. Set to 0 for instantaneous switching
         work_measurement : str
             The name of method used to calculate the work of the NCMC protocol
         ncmc_timestep : simtk.unit.Quantity with units compatible with femtoseconds
-            Timestep to use for _ncmc switching
+            Timestep to use for ncmc switching
         waterName = str, optional, default='HOH'
             Name of water residue that will be exchanged with salt
         cationName : str, optional, default='Na+'
@@ -184,7 +184,7 @@ class Swapper(object):
             if force.__class__.__name__ == 'NonbondedForce':
                 self.forces_to_update = force
 
-        # Record the forces that need to be swicthed off for _ncmc
+        # Record the forces that need to be swicthed off for ncmc
         forces = {system.getForce(index).__class__.__name__: system.getForce(index) for index in
                   range(system.getNumForces())}
         # Control center mass remover
@@ -227,7 +227,7 @@ class Swapper(object):
         # Reset statistics.
         self.reset_statistics()
 
-        # For comparing _ncmc and instance switching energies only:
+        # For comparing ncmc and instance switching energies only:
         # self.nrg_ncmc = []
         # self.nrg_isnt = []
 
@@ -238,17 +238,17 @@ class Swapper(object):
         self.work_rm_per_step = []
         self.naccepted_ncmc_integrator = []
 
-        # For counting the number of NaNs I get in _ncmc. These are automatically rejected.
+        # For counting the number of NaNs I get in ncmc. These are automatically rejected.
         self.nan = 0
 
     def _set_parampath(self, lj_step=1):
         """
         Produce an interpolation between the non-bonded forcefield parameters of water and ion parameters, with the
         option to perturb the partial charges more slowly than the Lennard-Jones (LJ) parameters. The interpolation serves
-        as a path for _ncmc.
+        as a path for ncmc.
 
         The perturbation of LJ parameters is slowed relative to the partial charge perturbation by introducing a lag in
-        the update of the LJ path, which is specified by lj_step.  With lj_step > 1, more of the _ncmc protocol is spent
+        the update of the LJ path, which is specified by lj_step.  With lj_step > 1, more of the ncmc protocol is spent
         on the partial charge parameters.
 
         Parameters
@@ -285,7 +285,7 @@ class Swapper(object):
             else:
                 npert_lj = np.floor(float(self.npert) / float(lj_step))
         # For each atom in the water model (indexed by atm_ind), the parameters are linearly interpolated between the ions.
-        # Both the forward and reverse directions (ie wat2cat and cat2wat) are calculated to save time at each _ncmc perturbation
+        # Both the forward and reverse directions (ie wat2cat and cat2wat) are calculated to save time at each ncmc perturbation
         n_lj = 0
         for n in range(self.npert + 1):
             frac_charge = float(n) / float(self.npert)
@@ -466,7 +466,9 @@ class Swapper(object):
         # TODO: fix integrators so that a simple call like this works.
         # ncmc_integrator.reset_protocol_work()
 
-        external_work = 0.0
+        internal_work = np.zeros(self.npert + 1)
+        external_work = np.zeros(self.npert + 1)
+        ext_wrk = 0.0
         # Propagation
         ncmc_integrator.step(1)
         for stage in range(self.npert + 1):
@@ -477,20 +479,25 @@ class Swapper(object):
             self.forces_to_update.updateParametersInContext(context)
             pot_final = self._get_potential_energy(context)
             # Energy after perturbation
-            external_work += (pot_final - pot_initial) / self.kT
+            ext_wrk += (pot_final - pot_initial) / self.kT
+            external_work[stage] = ext_wrk
+            #external_work += (pot_final - pot_initial) / self.kT
             # Propagation
             ncmc_integrator.step(1)
+            internal_work[stage] = ncmc_integrator.getGlobalVariableByName('protocol_work') / self.kT_unitless
 
         # Extract the internally calculated work from the integrator
-        internal_work = ncmc_integrator.getGlobalVariableByName('protocol_work') / self.kT_unitless
+        #internal_work = ncmc_integrator.getGlobalVariableByName('protocol_work') / self.kT_unitless
 
         # Re-instate center of mass motion if on.
         if self.cm_remover is not None:
             self.cm_remover.setFrequency(self.cm_remover_freq)
 
-        # Return the waters back to normal
+        # Return the salt that has been added.
         self._update_forces('remove salt', exchange_indices, stage=self.npert)
         self.forces_to_update.updateParametersInContext(context)
+
+        # I don't care about restoring the positions and velocities as this is a test.
 
         return internal_work, external_work
 
@@ -524,7 +531,7 @@ class Swapper(object):
         work: float
             The work for appropriate for the stated propagator in units of KT.
         cumulative_work: float
-            The cumulative protocol work for each _ncmc step
+            The cumulative protocol work for each ncmc step
 
         """
         if self.cm_remover is not None:
@@ -623,7 +630,7 @@ class Swapper(object):
                 work += (pot_final - pot_initial) / self.kT
                 cumulative_work[stage] = work
 
-            # Save the acceptance rate for the _ncmc protocol
+            # Save the acceptance rate for the ncmc protocol
             if isinstance(ncmc_integrator, GHMCIntegrator) or isinstance(ncmc_integrator,
                                                                          NCMCMetpropolizedGeodesicBAOAB):
                 self.naccepted_ncmc_integrator.append(
@@ -657,7 +664,7 @@ class Swapper(object):
         if type(penalty) == float:
             penalty = [penalty, -penalty]
 
-        # If using _ncmc, store initial positions.
+        # If using ncmc, store initial positions.
         if self.nprop > 0:
             initial_positions = context.getState(getPositions=True).getPositions()
             initial_velocities = context.getState(getVelocities=True).getVelocities()
@@ -692,13 +699,13 @@ class Swapper(object):
             change_indices = np.array([cation_index, anion_index])
             cost = penalty[1]
 
-        # Perform perturbation to remove or add salt with _ncmc and calculate energies
+        # Perform perturbation to remove or add salt with ncmc and calculate energies
         if self.nprop > 0:
             try:
                 work, cumulative_work = self._ncmc(context, self.npert, self.nprop, mode, change_indices,
                                                    work_measurement=self.work_measurement)
             except Exception as detail:
-                work = np.inf  # If the simulation explodes during _ncmc, reject with high work
+                work = np.inf  # If the simulation explodes during ncmc, reject with high work
                 cumulative_work = 0.0
                 print(detail)
                 if detail[0] == 'Particle coordinate is nan':
