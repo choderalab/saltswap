@@ -25,13 +25,6 @@ class NCMCGeodesicBAOAB(ExternalPerturbationLangevinIntegrator):
                                               )
 
 
-    def reset_protocol_work(self):
-        """
-        Reset the internally accumulated work.
-        """
-        self.setGlobalVariableByName("first_step", 0)
-        self.setGlobalVariableByName("protocol_work", 0)
-
 
 class NCMCMetpropolizedGeodesicBAOAB(ExternalPerturbationLangevinIntegrator):
     """
@@ -50,13 +43,6 @@ class NCMCMetpropolizedGeodesicBAOAB(ExternalPerturbationLangevinIntegrator):
                                               measure_shadow_work=True,
                                               measure_heat=False,
                                               )
-
-    def reset_protocol_work(self):
-        """
-        Reset the internally accumulated work.
-        """
-        self.setGlobalVariableByName("first_step", 0)
-        self.setGlobalVariableByName("protocol_work", 0)
 
 
 class GHMCIntegrator(mm.CustomIntegrator):
