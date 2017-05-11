@@ -39,20 +39,18 @@ import numpy as np
 from saltswap.swapper import Swapper
 import simtk.openmm as openmm
 import simtk.unit as unit
-from openmmtools import integrators
+from openmmtools import integrators as open_integrators
 
 from saltswap.integrators import GHMCIntegrator
 
 
 class MCMCSampler(object):
     """
-    Wrapper for MD and swapper moves.
+    Basics for molecular dynamics and saltswap swapper moves.
     """
-    #TODO: pass the actual propagator (not string) to be used for NCMC or ditch this class!
-    # TODO: finish adding in langevin integrator to this section. May be complete for swapper.py
     def __init__(self, system, topology, positions, temperature=300 * unit.kelvin, pressure=1 * unit.atmospheres,
                  delta_chem=0, mdsteps=2000, saltsteps=0, volsteps=25, saltmax=None, platform='CPU', npert=1, nprop=0,
-                 ncmc_timestep=1.0 * unit.femtoseconds, ncmc_propagator='Langevin', waterName='HOH', cationName='Na+',
+                 timestep=1.5 * unit.femtoseconds, propagator='Langevin', waterName='HOH', cationName='Na+',
                  anionName='Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
@@ -84,13 +82,13 @@ class MCMCSampler(object):
             The maximum number of salt ion pairs that can be inserted into the system. If None, then the maximum number
             is approximately half the number of water molecules.
         npert : integer
-            Number of _ncmc perturbation kernels. Set to 1 for instantaneous switching
+            Number of ncmc perturbation kernels. Set to 1 for instantaneous switching
         nprop : integer
-            Number of propagation kernels (MD steps) per _ncmc perturbation kernel. Set to 0 for instantaneous switching
-        ncmc_timestep : simtk.unit.Quantity with units compatible with femtoseconds
-            Timestep to use for _ncmc switching
-        ncmc_propagator : str
-            The name of the _ncmc propagator
+            Number of propagation kernels (MD steps) per ncmc perturbation kernel. Set to 0 for instantaneous switching
+        timestep : simtk.unit.Quantity with units compatible with femtoseconds
+            Timestep to use for ncmc switching
+        propagator : str
+            The name of the ncmc propagator
         waterName = str, optional, default='HOH'
             Name of water residue that will be exchanged with salt
         cationName : str, optional, default='Na+'
@@ -107,11 +105,13 @@ class MCMCSampler(object):
         self.saltsteps = saltsteps
         self.nprop = nprop
         self.saltmax = saltmax
+        collision_rate = 1 / unit.picosecond
 
-        # Exceptions
-        proplist = ['GHMC', 'GHMC_old', 'GHMC_save_work_per_step', 'velocityVerlet']
-        if ncmc_propagator not in proplist:
-            raise Exception('_ncmc propagator {0} not in supported list {1}'.format(ncmc_propagator, proplist))
+
+        # Only supporting two two types of integrators.
+        proplist = ['GHMC', 'Langevin']
+        if propagator not in proplist:
+            raise Exception('ncmc propagator {0} not in supported list {1}'.format(propagator, proplist))
 
         platform_types = ['CUDA', 'OpenCL', 'CPU']
         if platform not in platform_types:
@@ -121,23 +121,29 @@ class MCMCSampler(object):
 
         # Setting the compound integrator:
         if nprop != 0:
+            # NCMC will be used to insert/delete salt
             self.integrator = openmm.CompoundIntegrator()
-            self.integrator.addIntegrator(
-                GHMCIntegrator(temperature, 1 / unit.picosecond, ncmc_timestep, nsteps=1))
-            if ncmc_propagator == 'GHMC':
-                self.integrator.addIntegrator(
-                    GHMCIntegrator(temperature, 1 / unit.picosecond, ncmc_timestep, nsteps=nprop))
-            elif ncmc_propagator == 'GHMC_old':
-                self.integrator.addIntegrator(
-                    integrators.GHMCIntegrator(temperature, 1 / unit.picosecond, ncmc_timestep))
-            elif ncmc_propagator == 'velocityVerlet':
-                self.integrator.addIntegrator(integrators.VelocityVerletIntegrator(ncmc_timestep * unit.femtoseconds))
-            else:
-                raise Exception('_ncmc propagator {0} not in supported list {1}'.format(ncmc_propagator, proplist))
+            if propagator == proplist[0]:
+                self.integrator.addIntegrator(GHMCIntegrator(temperature, collision_rate, timestep, nsteps=1))
+                self.integrator.addIntegrator(GHMCIntegrator(temperature, collision_rate, timestep, nsteps=nprop))
+            elif propagator == proplist[1]:
+                self.integrator.addIntegrator(open_integrators.LangevinIntegrator(splitting="V R O R V",
+                                                                                  temperature=temperature,
+                                                                                  timestep=timestep,
+                                                                                  collision_rate=collision_rate))
+                self.integrator.addIntegrator(open_integrators.ExternalPerturbationLangevinIntegrator(splitting="V R O R V",
+                                                                                                      temperature=temperature,
+                                                                                                      timestep=timestep,
+                                                                                                      collision_rate=collision_rate))
             self.integrator.setCurrentIntegrator(0)
         else:
-            self.integrator = GHMCIntegrator(temperature, 1 / unit.picosecond, 2.0 * unit.femtoseconds, nsteps=1)
-
+            if propagator == proplist[0]:
+                self.integrator = GHMCIntegrator(temperature, collision_rate, 2.0 * unit.femtoseconds, nsteps=1)
+            elif propagator == proplist[1]:
+                self.integrator = open_integrators.LangevinIntegrator(splitting="V R O R V",
+                                                                                  temperature=temperature,
+                                                                                  timestep=timestep,
+                                                                                  collision_rate=collision_rate)
         # Setting the barostat:
         if pressure is not None:
             self.barostat = openmm.MonteCarloBarostat(pressure, temperature, volsteps)
@@ -162,7 +168,7 @@ class MCMCSampler(object):
         # Initialising the saltswap object
         self.saltswap = Swapper(system=system, topology=topology, temperature=temperature, delta_chem=delta_chem,
                                 integrator=self.integrator, pressure=pressure,
-                                npert=npert, nprop=nprop, propagator=ncmc_propagator, waterName=waterName,
+                                npert=npert, nprop=nprop, work_measurement='internal', waterName=waterName,
                                 cationName=cationName, anionName=anionName)
 
     def gen_config(self, mdsteps=None):
@@ -260,7 +266,7 @@ class SaltSAMS(MCMCSampler):
         super(SaltSAMS, self).__init__(system=system, topology=topology, positions=positions, temperature=temperature,
                                        pressure=pressure, delta_chem=delta_chem, mdsteps=mdsteps, saltsteps=saltsteps,
                                        volsteps=volsteps,
-                                       platform=platform, npert=npert, nprop=nprop, ncmc_propagator=propagator)
+                                       platform=platform, npert=npert, nprop=nprop, propagator=propagator)
 
         self.burnin = burnin
         self.b = b

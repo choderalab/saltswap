@@ -44,7 +44,6 @@ class NCMCMetpropolizedGeodesicBAOAB(ExternalPerturbationLangevinIntegrator):
                                               measure_heat=False,
                                               )
 
-
 class GHMCIntegrator(mm.CustomIntegrator):
     """
 
@@ -118,28 +117,31 @@ class GHMCIntegrator(mm.CustomIntegrator):
         self.addGlobalVariable("accept", 0)  # accept or reject
         self.addGlobalVariable("naccept", 0)  # number accepted
         self.addGlobalVariable("ntrials", 0)  # number of Metropolization trials
+        self.addGlobalVariable("first_step", 0)  # number of Metropolization trials
         self.addPerDofVariable("x1", 0)  # position before application of constraints
         self.addGlobalVariable("step", 0)  # variable to keep track of number of propagation steps
         self.addGlobalVariable("nsteps", nsteps)  # The number of iterations per integrator.step(1).
         #
         # Initialization.
         #
-        self.beginIfBlock("ntrials = 0")
+        self.beginIfBlock("first_step < 1")
         self.addComputePerDof("sigma", "sqrt(kT/m)")
         self.addComputeGlobal("protocol_work", "0.0")
         self.addConstrainPositions()
         self.addConstrainVelocities()
         self.addComputeGlobal("potential_new", "energy")
+        self.addComputeGlobal("first_step", "1")
         self.endBlock()
+
+        self.addComputeGlobal("potential_initial", "energy")
+        self.addComputeGlobal("step", "0")
+        self.addComputeGlobal("protocol_work", "protocol_work + (potential_initial - potential_new)")
 
         #
         # Allow context updating here.
         #
         self.addUpdateContextState()
 
-        self.addComputeGlobal("potential_initial", "energy")
-        self.addComputeGlobal("step", "0")
-        self.addComputeGlobal("protocol_work", "protocol_work + (potential_initial - potential_new)")
         if True:
             self.beginWhileBlock("step < nsteps")
             #
@@ -187,8 +189,4 @@ class GHMCIntegrator(mm.CustomIntegrator):
             self.endBlock()
 
     def reset_protocol_work(self):
-        """
-        Reset the internally accumulated work.
-        """
-        self.setGlobalVariableByName("ntrials", 0)
-        self.setGlobalVariableByName("naccept", 0)
+        self.setGlobalVariableByName("protocol_work", 0)

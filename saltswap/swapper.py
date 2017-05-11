@@ -166,7 +166,7 @@ class Swapper(object):
         self.waterName = waterName
         self.integrator = integrator
 
-        work_method_list = ['total', 'internal', 'external']
+        work_method_list = ['internal', 'external']
         if work_measurement in work_method_list:
             self.work_measurement = work_measurement
         elif work_measurement not in work_method_list and npert == 0:
@@ -427,7 +427,7 @@ class Swapper(object):
                 stateVector[i] = 2
         return stateVector
 
-    def test_ncmc(self, context):
+    def compare_protocol_work(self, context):
         """
         Test implementation of NCMC to compare two different methods of calculating protocol work.
 
@@ -440,31 +440,15 @@ class Swapper(object):
         mode='add salt'
         exchange_indices= np.random.choice(a=np.where(self.stateVector == 0)[0], size=2, replace=False)
 
-        # TODO: remove the below for a simpler implementation
-        # Option for when the ncmc_integrator internally accumulates the work.
-
         if self.cm_remover is not None:
             self.cm_remover.setFrequency(0)
 
+        # Extract NCMC integrator.
         self.integrator.setCurrentIntegrator(1)
         ncmc_integrator = self.integrator.getIntegrator(1)
 
-        try:
-            # If the integrator is Metropolized, reset the protocol work and acceptance rate counters.
-            ncmc_integrator.setGlobalVariableByName("ntrials", 0)
-            ncmc_integrator.setGlobalVariableByName("naccept", 0)
-        except:
-            pass
-
-        try:
-            # If not Metropolized, then reset protocol work only.
-            ncmc_integrator.setGlobalVariableByName("first_step", 0)
-            ncmc_integrator.setGlobalVariableByName("protocol_work", 0)
-        except:
-            pass
-
-        # TODO: fix integrators so that a simple call like this works.
-        # ncmc_integrator.reset_protocol_work()
+        # Reset protocol work
+        ncmc_integrator.setGlobalVariableByName("first_step", 0)
 
         internal_work = np.zeros(self.npert + 1)
         external_work = np.zeros(self.npert + 1)
@@ -481,13 +465,9 @@ class Swapper(object):
             # Energy after perturbation
             ext_wrk += (pot_final - pot_initial) / self.kT
             external_work[stage] = ext_wrk
-            #external_work += (pot_final - pot_initial) / self.kT
             # Propagation
             ncmc_integrator.step(1)
             internal_work[stage] = ncmc_integrator.getGlobalVariableByName('protocol_work') / self.kT_unitless
-
-        # Extract the internally calculated work from the integrator
-        #internal_work = ncmc_integrator.getGlobalVariableByName('protocol_work') / self.kT_unitless
 
         # Re-instate center of mass motion if on.
         if self.cm_remover is not None:
@@ -541,54 +521,8 @@ class Swapper(object):
         self.integrator.setCurrentIntegrator(1)
         ncmc_integrator = self.integrator.getIntegrator(1)
 
-        if work_measurement == 'total':
-            # Option when ncmc_integrator is VelocityVerletIntegrator.
-
-            # Turn the barostat off, as volume must be constant for sympletic integrator
-            if self.barostat is not None:
-                self.barostat.setFrequency(0)
-
-            ncmc_integrator = self.integrator.getIntegrator(1)
-            # Get initial total energy
-            logp_initial, pot, kin = self._compute_log_probability(context)
-            # Propagation
-            self.integrator.step(nprop)
-            for stage in range(npert + 1):
-                # Perturbation
-                self._update_forces(mode, exchange_indices, stage)
-                self.forces_to_update.updateParametersInContext(context)
-                # Propagation
-                ncmc_integrator.step(nprop)
-            # Get final total energy and calculate total work
-            logp_final, pot, kin = self._compute_log_probability(context)
-            work = logp_initial - logp_final
-
-            # Turn the barostat back on
-            if self.barostat is not None:
-                self.barostat.setFrequency(self.barofreq)
-
-        elif work_measurement == 'internal':
-            print('Internal work calculation')
-
-            #TODO: remove the below for a simpler implementation
-            # Option for when the ncmc_integrator internally accumulates the work.
-            try:
-                # If the integrator is Metropolized, reset the protocol work and acceptance rate counters.
-                ncmc_integrator.setGlobalVariableByName("ntrials", 0)
-                ncmc_integrator.setGlobalVariableByName("naccept", 0)
-            except:
-                pass
-
-            try:
-                # If not Metropolized, then reset protocol work only.
-                ncmc_integrator.setGlobalVariableByName("first_step", 0)
-                ncmc_integrator.setGlobalVariableByName("protocol_work", 0)
-            except:
-                pass
-
-            # TODO: fix integrators so that a simple call like this works.
-            #ncmc_integrator.reset_protocol_work()
-
+        if work_measurement == 'internal':
+            ncmc_integrator.setGlobalVariableByName("first_step", 0)
             # Propagation
             ncmc_integrator.step(1)
             for stage in range(npert + 1):
@@ -602,11 +536,11 @@ class Swapper(object):
             # Extract the internally calculated work from the integrator
             work = ncmc_integrator.getGlobalVariableByName('protocol_work') / self.kT_unitless
 
-            # Save the acceptance rate for the ncmc protocol
+            # Save the acceptance rate for the ncmc protocol if the propagator is Metropolized.
             try:
                 self.naccepted_ncmc_integrator.append(ncmc_integrator.getGlobalVariableByName('naccept') / ncmc_integrator.getGlobalVariableByName('ntrials'))
             except:
-                pass
+                self.naccepted_ncmc_integrator.append(0.0)
 
         elif work_measurement == 'external':
             # Like the GHMC integrator above, except that energies are calculated with _get_potential_energy() for
@@ -631,10 +565,11 @@ class Swapper(object):
                 cumulative_work[stage] = work
 
             # Save the acceptance rate for the ncmc protocol
-            if isinstance(ncmc_integrator, GHMCIntegrator) or isinstance(ncmc_integrator,
-                                                                         NCMCMetpropolizedGeodesicBAOAB):
+            try:
                 self.naccepted_ncmc_integrator.append(
                     ncmc_integrator.getGlobalVariableByName('naccept') / ncmc_integrator.getGlobalVariableByName('ntrials'))
+            except:
+                self.naccepted_ncmc_integrator.append(0.0)
 
         else:
             raise Exception('Method to calculate work, "{0}", not recognized'.format(work_measurement))
