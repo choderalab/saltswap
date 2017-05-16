@@ -125,18 +125,21 @@ class MCMCSampler(object):
             self.integrator = openmm.CompoundIntegrator()
             if propagator == proplist[0]:
                 self.integrator.addIntegrator(GHMCIntegrator(temperature, collision_rate, timestep, nsteps=1))
-                self.integrator.addIntegrator(GHMCIntegrator(temperature, collision_rate, timestep, nsteps=nprop))
+                ncmc_integrator = GHMCIntegrator(temperature, collision_rate, timestep, nsteps=nprop)
+                self.integrator.addIntegrator(ncmc_integrator)
             elif propagator == proplist[1]:
                 self.integrator.addIntegrator(open_integrators.LangevinIntegrator(splitting="V R O R V",
                                                                                   temperature=temperature,
                                                                                   timestep=timestep,
                                                                                   collision_rate=collision_rate))
-                self.integrator.addIntegrator(open_integrators.ExternalPerturbationLangevinIntegrator(splitting="V R O R V",
+                ncmc_integrator = open_integrators.ExternalPerturbationLangevinIntegrator(splitting="V R O R V",
                                                                                                       temperature=temperature,
                                                                                                       timestep=timestep,
-                                                                                                      collision_rate=collision_rate))
+                                                                                                      collision_rate=collision_rate)
+                self.integrator.addIntegrator(ncmc_integrator)
             self.integrator.setCurrentIntegrator(0)
         else:
+            ncmc_integrator = None
             if propagator == proplist[0]:
                 self.integrator = GHMCIntegrator(temperature, collision_rate, 2.0 * unit.femtoseconds, nsteps=1)
             elif propagator == proplist[1]:
@@ -167,7 +170,7 @@ class MCMCSampler(object):
 
         # Initialising the saltswap object
         self.saltswap = Swapper(system=system, topology=topology, temperature=temperature, delta_chem=delta_chem,
-                                integrator=self.integrator, pressure=pressure,
+                                ncmc_integrator=ncmc_integrator, pressure=pressure,
                                 npert=npert, nprop=nprop, work_measurement='internal', waterName=waterName,
                                 cationName=cationName, anionName=anionName)
 

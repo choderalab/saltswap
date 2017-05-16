@@ -115,7 +115,7 @@ class Swapper(object):
 
     """
 
-    def __init__(self, system, topology, temperature, delta_chem, integrator, pressure=None, nattempts_per_update=1,
+    def __init__(self, system, topology, temperature, delta_chem, ncmc_integrator=None, pressure=None, nattempts_per_update=1,
                  npert=1, nprop=0, work_measurement='internal', waterName="HOH", cationName='Na+', anionName='Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
@@ -131,8 +131,8 @@ class Swapper(object):
         delta_chem : float or unit.Quantity
             The difference in chemical potential for swapping 2 water molecules for Na Cl.
             If it is a float, it is assumed to be in units of kT.
-        integrator : simtk.openmm.integrator
-            The integrator used for dynamics outside of Swapper
+        ncmc_integrator : simtk.openmm.integrator
+            The integrator used for NCMC propagation of insertion and deletions
         pressure : simtk.unit.Quantity compatible with atmospheres, optional, default=None
             For explicit solvent simulations, the pressure.
         npert : integer
@@ -164,7 +164,7 @@ class Swapper(object):
         self.anionName = anionName
         self.cationName = cationName
         self.waterName = waterName
-        self.integrator = integrator
+        self.ncmc_integrator = ncmc_integrator
 
         work_method_list = ['internal', 'external']
         if work_measurement in work_method_list:
@@ -443,18 +443,14 @@ class Swapper(object):
         if self.cm_remover is not None:
             self.cm_remover.setFrequency(0)
 
-        # Extract NCMC integrator.
-        self.integrator.setCurrentIntegrator(1)
-        ncmc_integrator = self.integrator.getIntegrator(1)
-
         # Reset protocol work
-        ncmc_integrator.setGlobalVariableByName("first_step", 0)
+        self.ncmc_integrator.setGlobalVariableByName("first_step", 0)
 
         internal_work = np.zeros(self.npert + 1)
         external_work = np.zeros(self.npert + 1)
         ext_wrk = 0.0
         # Propagation
-        ncmc_integrator.step(1)
+        self.ncmc_integrator.step(1)
         for stage in range(self.npert + 1):
             # Energy before perturbation
             pot_initial = self._get_potential_energy(context)
@@ -466,8 +462,8 @@ class Swapper(object):
             ext_wrk += (pot_final - pot_initial) / self.kT
             external_work[stage] = ext_wrk
             # Propagation
-            ncmc_integrator.step(1)
-            internal_work[stage] = ncmc_integrator.getGlobalVariableByName('protocol_work') / self.kT_unitless
+            self.ncmc_integrator.step(1)
+            internal_work[stage] = self.ncmc_integrator.get_protocol_work(dimensionless=True)
 
         # Re-instate center of mass motion if on.
         if self.cm_remover is not None:
@@ -518,27 +514,26 @@ class Swapper(object):
             self.cm_remover.setFrequency(0)
 
         cumulative_work = np.zeros(npert + 1)
-        self.integrator.setCurrentIntegrator(1)
-        ncmc_integrator = self.integrator.getIntegrator(1)
 
         if work_measurement == 'internal':
-            ncmc_integrator.setGlobalVariableByName("first_step", 0)
+            self.ncmc_integrator.setGlobalVariableByName("first_step", 0)
             # Propagation
-            ncmc_integrator.step(1)
+            self.ncmc_integrator.step(1)
             for stage in range(npert + 1):
                 # Perturbation
                 self._update_forces(mode, exchange_indices, stage)
                 self.forces_to_update.updateParametersInContext(context)
                 # Propagation
-                ncmc_integrator.step(1)
-                cumulative_work[stage] = ncmc_integrator.getGlobalVariableByName('protocol_work') / self.kT_unitless
+                self.ncmc_integrator.step(1)
+                cumulative_work[stage] = self.ncmc_integrator.get_protocol_work(dimensionless=True)
 
             # Extract the internally calculated work from the integrator
-            work = ncmc_integrator.getGlobalVariableByName('protocol_work') / self.kT_unitless
+            #work = ncmc_integrator.getGlobalVariableByName('protocol_work') / self.kT_unitless
+            work = self.ncmc_integrator.get_protocol_work(dimensionless=True)
 
             # Save the acceptance rate for the ncmc protocol if the propagator is Metropolized.
             try:
-                self.naccepted_ncmc_integrator.append(ncmc_integrator.getGlobalVariableByName('naccept') / ncmc_integrator.getGlobalVariableByName('ntrials'))
+                self.naccepted_ncmc_integrator.append(self.ncmc_integrator.getGlobalVariableByName('naccept') / self.ncmc_integrator.getGlobalVariableByName('ntrials'))
             except:
                 self.naccepted_ncmc_integrator.append(0.0)
 
@@ -549,7 +544,7 @@ class Swapper(object):
 
             work = 0.0  # Unitless work
             # Propagation
-            ncmc_integrator.step(nprop)
+            self.ncmc_integrator.step(nprop)
             for stage in range(npert + 1):
                 # Getting the potential energy before the perturbation
                 pot_initial = self._get_potential_energy(context)
@@ -559,7 +554,7 @@ class Swapper(object):
                 # Getting the potential energy after the perturbation
                 pot_final = self._get_potential_energy(context)
                 # Propagation
-                ncmc_integrator.step(nprop)
+                self.ncmc_integrator.step(nprop)
                 # Update the accumulated work
                 work += (pot_final - pot_initial) / self.kT
                 cumulative_work[stage] = work
@@ -567,13 +562,14 @@ class Swapper(object):
             # Save the acceptance rate for the ncmc protocol
             try:
                 self.naccepted_ncmc_integrator.append(
-                    ncmc_integrator.getGlobalVariableByName('naccept') / ncmc_integrator.getGlobalVariableByName('ntrials'))
+                    self.ncmc_integrator.getGlobalVariableByName('naccept') / ncmc_integrator.getGlobalVariableByName('ntrials'))
             except:
                 self.naccepted_ncmc_integrator.append(0.0)
 
         else:
             raise Exception('Method to calculate work, "{0}", not recognized'.format(work_measurement))
-        self.integrator.setCurrentIntegrator(0)
+
+        #self.ncmc_integrator.setCurrentIntegrator(0)
 
         if self.cm_remover is not None:
             self.cm_remover.setFrequency(self.cm_remover_freq)

@@ -46,8 +46,10 @@ class TestWaterBoxSimulation(object):
         context = openmm.Context(wbox.system, integrator, platform)
         context.setPositions(wbox.positions)
 
+        #salinator = swapper.Swapper(system=wbox.system, topology=wbox.topology, temperature=temperature, delta_chem=0.0,
+        #                            ncmc_integrator=integrator, pressure=pressure, npert=npert, nprop=1)
         salinator = swapper.Swapper(system=wbox.system, topology=wbox.topology, temperature=temperature, delta_chem=0.0,
-                integrator=integrator, pressure=pressure, npert=npert, nprop=1)
+                                    ncmc_integrator=ncmc_langevin, pressure=pressure, npert=npert, nprop=1)
 
         return integrator, context, salinator
 
@@ -89,8 +91,10 @@ class TestWaterBoxSimulation(object):
         context.setPositions(wbox.positions)
 
         # TODO: set pressure in Swapper when issue with GHMC barostat is fixed.
+        #salinator = swapper.Swapper(system=wbox.system, topology=wbox.topology, temperature=temperature, delta_chem=0.0,
+        #                            ncmc_integrator=integrator, pressure=None, npert=npert, nprop=1)
         salinator = swapper.Swapper(system=wbox.system, topology=wbox.topology, temperature=temperature, delta_chem=0.0,
-                integrator=integrator, pressure=None, npert=npert, nprop=1)
+                                    ncmc_integrator=ncmc_ghmc, pressure=None, npert=npert, nprop=1)
 
         return integrator, context, salinator
 

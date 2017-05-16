@@ -189,4 +189,23 @@ class GHMCIntegrator(mm.CustomIntegrator):
             self.endBlock()
 
     def reset_protocol_work(self):
+        """
+        Set protocol work to zero in order to restart an NCMC procedure.
+        """
         self.setGlobalVariableByName("protocol_work", 0)
+
+    def get_protocol_work(self, dimensionless=False):
+        """
+        Return the accumulated protocol work either in kJ/mol or in dimensionless units of thermal energy.
+
+        Parameter
+        ---------
+        dimensionless: bool
+            whether to return the work in units of thermal energy
+        """
+        work = self.getGlobalVariableByName("protocol_work")
+
+        if dimensionless:
+            return work / self.getGlobalVariableByName("kT")
+        else:
+            return work
