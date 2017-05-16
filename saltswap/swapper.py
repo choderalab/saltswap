@@ -618,8 +618,8 @@ class Swapper(object):
             cost = penalty[0]  # The free energy to remove salt and add 2 waters to bulk water
         elif (sum(self.stateVector == 1) >= saltmax):
             mode = "remove salt"
-            cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)
-            anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)
+            cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)[0]
+            anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)[0]
             change_indices = np.array([cation_index, anion_index])
             log_accept -= np.log(2)  # Due to asymmetric proposal probabilities
             cost = penalty[1]
@@ -629,8 +629,8 @@ class Swapper(object):
             cost = penalty[0]
         else:
             mode = "remove salt"
-            cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)
-            anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)
+            cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)[0]
+            anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)[0]
             change_indices = np.array([cation_index, anion_index])
             cost = penalty[1]
 
