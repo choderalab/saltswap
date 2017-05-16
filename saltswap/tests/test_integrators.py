@@ -337,7 +337,7 @@ class TestIntegrators():
         pressure = 1 * unit.atmospheres
 
         wbox = WaterBox(nonbondedMethod=openmm.app.CutoffPeriodic)
-        wbox.system.addForce(openmm.MonteCarloBarostat(pressure, temperature))
+        #wbox.system.addForce(openmm.MonteCarloBarostat(pressure, temperature))
 
         reference_system = wbox.system
         system = copy.deepcopy(wbox.system)
@@ -401,7 +401,6 @@ class TestIntegrators():
             pressure = 1 * unit.atmospheres
 
             wbox = WaterBox(nonbondedMethod=openmm.app.CutoffPeriodic)
-            wbox.system.addForce(openmm.MonteCarloBarostat(pressure, temperature))
 
             reference_system = wbox.system
             system = copy.deepcopy(wbox.system)
