@@ -45,7 +45,7 @@ if __name__ == "__main__":
     timestep = args.timestep * unit.femtoseconds
     sampler = MCMCSampler(wbox.system, wbox.topology, wbox.positions, temperature=temperature, pressure=pressure,
                           saltmax=args.saltmax, npert=args.npert, nprop=args.nprop, propagator=args.propagator,
-                          ncmc_timestep=timestep, delta_chem=args.deltachem, mdsteps=args.steps,
+                          timestep=timestep, delta_chem=args.deltachem, mdsteps=args.steps,
                           saltsteps=args.attempts, platform=args.platform)
 
     ghmc_equilibrium = sampler.integrator.getIntegrator(0)
@@ -113,11 +113,11 @@ if __name__ == "__main__":
         # Save data
         acc = sampler.saltswap.get_acceptance_probability()
         if args.nprop != 0 and args.propagator == 'GHMC':
-            ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ghmc))
+            ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ncmc_integrator))
         else:
             ghmc_acc = 0
         equil_acc = ghmc_equilibrium.getGlobalVariableByName('naccept') / ghmc_equilibrium.getGlobalVariableByName('ntrials')
-        sampler.saltswap.naccepted_ghmc = []
+        sampler.saltswap.naccepted_ncmc_integrator = []
         f = open(args.data, 'a')
         s = "{:4} {:5} {:5}   {:0.2f}         {:0.2f}      {:0.2f}         {:0.1f}      {:0.3f}\n".format(i, cnts[0], cnts[1], round(acc,2), round(ghmc_acc,2), round(equil_acc,2), iter_time, z[1])
         f.write(s)

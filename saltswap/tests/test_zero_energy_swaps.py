@@ -20,7 +20,7 @@ class TestZeroEnergySwaps(object):
     temperature. (The factor of 1/2 in the exponent comes from the fact that two water molecules are exchanged for
     two ions.)
     """
-    def test_ideal_swaps_instant(self, Dmu = 0, size = 15.0 * unit.angstrom, Nsamps = 50):
+    def test_ideal_swaps_instant(self, Dmu=0, size =15.0 * unit.angstrom, Nsamps=50):
         """
         Box of water test for zero energy swap for instantaneous insertions and deletions.
 
@@ -37,8 +37,8 @@ class TestZeroEnergySwaps(object):
         target = np.exp(- Dmu / 2)
 
         # Create the box of water to simulate
-        wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
-        dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu, nprop = 0, npert = 1)
+        wbox = WaterBox(box_edge = size, nonbondedMethod=app.PME, cutoff=size/2 - 0.5*unit.angstrom)
+        dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem=Dmu, nprop=0, npert=1)
         dummystate.saltswap.cation_parameters = dummystate.saltswap.water_parameters    # Setting the cation parameters to water's
         dummystate.saltswap.anion_parameters = dummystate.saltswap.water_parameters     # Setting the anion parameters to water's
         dummystate.saltswap._set_parampath()     # Recalculating the peturbation path for new paramters
@@ -46,7 +46,7 @@ class TestZeroEnergySwaps(object):
         # Sampling. Recording the ratio of water to salt every 20 attempts and repeated Nsamps times.
         ratio = []
         for batch in range(Nsamps):
-            dummystate.gen_label(saltsteps=20)
+            dummystate.gen_label(saltsteps=10)
             (nwats,nsalt,junk) = dummystate.saltswap.get_identity_counts()
             ratio.append(1.0*nwats/nsalt)
         ratio = np.array(ratio)
@@ -57,7 +57,7 @@ class TestZeroEnergySwaps(object):
         # Increasing standard error by a factor 2.5, as correlations between samples underestimate the error
         assert (ratio_mean < target + 2.5 * ratio_std_error) and (ratio_mean > target - 2.5 * ratio_std_error)
 
-    def test_ideal_swaps_GHMC(self, Dmu = 0, size = 15.0 * unit.angstrom, Nsamps = 50):
+    def test_ideal_swaps_GHMC(self, Dmu=0, size =15.0 * unit.angstrom, Nsamps=50):
         """
         Box of water test for zero energy swap for _ncmc insertions and deletions using a GHMC integrator.
 
@@ -74,8 +74,8 @@ class TestZeroEnergySwaps(object):
         target = np.exp(- Dmu / 2)
 
         # Create the box of water to simulate
-        wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
-        dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu, nprop = 1, npert = 5, propagator='GHMC')
+        wbox = WaterBox(box_edge=size, nonbondedMethod=app.PME, cutoff=size/2 - 0.5*unit.angstrom)
+        dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu, nprop=1, npert=3, propagator='GHMC')
         dummystate.saltswap.cation_parameters = dummystate.saltswap.water_parameters    # Setting the cation parameters to water's
         dummystate.saltswap.anion_parameters = dummystate.saltswap.water_parameters     # Setting the anion parameters to water's
         dummystate.saltswap._set_parampath()     # Recalculating the peturbation path for new paramters
@@ -83,44 +83,7 @@ class TestZeroEnergySwaps(object):
         # Sampling. Recording the ratio of water to salt every 20 attempts and repeated Nsamps times.
         ratio = []
         for batch in range(Nsamps):
-            dummystate.gen_label(saltsteps=20)
-            (nwats,nsalt,junk) = dummystate.saltswap.get_identity_counts()
-            ratio.append(1.0*nwats/nsalt)
-        ratio = np.array(ratio)
-        ratio_mean = np.mean(ratio)
-        ratio_std_error = np.std(ratio)/np.sqrt(Nsamps)
-
-        # Seeing if the calculated ratio is close to the target ratio.
-        # Increasing standard error by a factor 2.5, as correlations between samples underestimate the error
-        assert (ratio_mean < target + 2.5 * ratio_std_error) and (ratio_mean > target - 2.5 * ratio_std_error)
-
-    def test_ideal_swaps_velocity_verlet(self, Dmu = 0, size = 15.0 * unit.angstrom, Nsamps = 50):
-        """
-        Box of water test for zero energy swap for _ncmc insertions and deletions using a velocity Verlet integrator.
-
-        Parameter
-        ---------
-        Dmu : float
-          The difference in chemical potential between 2 water molecules and 1 salt molecule, in units of kT.
-        size : Quantity length
-          The length of the sides of the water box
-        Nsamps : int
-          The number repeats for batches of insertion and deletion attempts
-        """
-        # Calculating the target ratio
-        target = np.exp(- Dmu / 2)
-
-        # Create the box of water to simulate
-        wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
-        dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu, nprop = 1, npert = 5, propagator='velocityVerlet')
-        dummystate.saltswap.cation_parameters = dummystate.saltswap.water_parameters    # Setting the cation parameters to water's
-        dummystate.saltswap.anion_parameters = dummystate.saltswap.water_parameters     # Setting the anion parameters to water's
-        dummystate.saltswap._set_parampath()     # Recalculating the peturbation path for new paramters
-
-        # Sampling. Recording the ratio of water to salt every 20 attempts and repeated Nsamps times.
-        ratio = []
-        for batch in range(Nsamps):
-            dummystate.gen_label(saltsteps=20)
+            dummystate.gen_label(saltsteps=10)
             (nwats,nsalt,junk) = dummystate.saltswap.get_identity_counts()
             ratio.append(1.0*nwats/nsalt)
         ratio = np.array(ratio)

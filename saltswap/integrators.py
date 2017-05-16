@@ -2,9 +2,47 @@ import numpy
 import simtk.unit
 import simtk.unit as units
 import simtk.openmm as mm
+from openmmtools.integrators import ExternalPerturbationLangevinIntegrator
 
 kB = units.BOLTZMANN_CONSTANT_kB * units.AVOGADRO_CONSTANT_NA
 
+class NCMCGeodesicBAOAB(ExternalPerturbationLangevinIntegrator):
+    """
+    Implementation of a g-BAOAB integrator which tracks external protocol work.
+    """
+    def __init__(self, temperature=298.0 * simtk.unit.kelvin,
+                 collision_rate=91.0 / simtk.unit.picoseconds,
+                 timestep=1.0 * simtk.unit.femtoseconds,
+                 constraint_tolerance=1e-7
+                 ):
+        super(NCMCGeodesicBAOAB, self).__init__(splitting="V R R O R R V",
+                                              temperature=temperature,
+                                              collision_rate=collision_rate,
+                                              timestep=timestep,
+                                              constraint_tolerance=constraint_tolerance,
+                                              measure_shadow_work=False,
+                                              measure_heat=False,
+                                              )
+
+
+
+class NCMCMetpropolizedGeodesicBAOAB(ExternalPerturbationLangevinIntegrator):
+    """
+    Implementation of a Metropolized g-BAOAB integrator which tracks external protocol work.
+    """
+    def __init__(self, temperature=298.0 * simtk.unit.kelvin,
+                 collision_rate=91.0 / simtk.unit.picoseconds,
+                 timestep=1.0 * simtk.unit.femtoseconds,
+                 constraint_tolerance=1e-7
+                 ):
+        super(NCMCMetpropolizedGeodesicBAOAB, self).__init__(splitting="{ V R R O R R V }",
+                                              temperature=temperature,
+                                              collision_rate=collision_rate,
+                                              timestep=timestep,
+                                              constraint_tolerance=constraint_tolerance,
+                                              measure_shadow_work=True,
+                                              measure_heat=False,
+                                              )
 
 class GHMCIntegrator(mm.CustomIntegrator):
     """
@@ -75,32 +113,35 @@ class GHMCIntegrator(mm.CustomIntegrator):
         self.addGlobalVariable("potential_initial", 0)  # initial potential energy
         self.addGlobalVariable("potential_old", 0)  # old potential energy
         self.addGlobalVariable("potential_new", 0)  # new potential energy
-        self.addGlobalVariable("work", 0)
+        self.addGlobalVariable("protocol_work", 0)
         self.addGlobalVariable("accept", 0)  # accept or reject
         self.addGlobalVariable("naccept", 0)  # number accepted
         self.addGlobalVariable("ntrials", 0)  # number of Metropolization trials
+        self.addGlobalVariable("first_step", 0)  # number of Metropolization trials
         self.addPerDofVariable("x1", 0)  # position before application of constraints
         self.addGlobalVariable("step", 0)  # variable to keep track of number of propagation steps
         self.addGlobalVariable("nsteps", nsteps)  # The number of iterations per integrator.step(1).
         #
         # Initialization.
         #
-        self.beginIfBlock("ntrials = 0")
+        self.beginIfBlock("first_step < 1")
         self.addComputePerDof("sigma", "sqrt(kT/m)")
-        self.addComputeGlobal("work", "0.0")
+        self.addComputeGlobal("protocol_work", "0.0")
         self.addConstrainPositions()
         self.addConstrainVelocities()
         self.addComputeGlobal("potential_new", "energy")
+        self.addComputeGlobal("first_step", "1")
         self.endBlock()
+
+        self.addComputeGlobal("potential_initial", "energy")
+        self.addComputeGlobal("step", "0")
+        self.addComputeGlobal("protocol_work", "protocol_work + (potential_initial - potential_new)")
 
         #
         # Allow context updating here.
         #
         self.addUpdateContextState()
 
-        self.addComputeGlobal("potential_initial", "energy")
-        self.addComputeGlobal("step", "0")
-        self.addComputeGlobal("work", "work + (potential_initial - potential_new)")
         if True:
             self.beginWhileBlock("step < nsteps")
             #
@@ -138,7 +179,7 @@ class GHMCIntegrator(mm.CustomIntegrator):
             #
             self.addComputePerDof("v", "sqrt(b)*v + sqrt(1-b)*sigma*gaussian")
             self.addConstrainVelocities()
-            #
+            #s
             # Accumulate statistics.
             #
             self.addComputeGlobal("naccept", "naccept + accept")
@@ -146,3 +187,25 @@ class GHMCIntegrator(mm.CustomIntegrator):
 
             self.addComputeGlobal("step", "step+1")
             self.endBlock()
+
+    def reset_protocol_work(self):
+        """
+        Set protocol work to zero in order to restart an NCMC procedure.
+        """
+        self.setGlobalVariableByName("protocol_work", 0)
+
+    def get_protocol_work(self, dimensionless=False):
+        """
+        Return the accumulated protocol work either in kJ/mol or in dimensionless units of thermal energy.
+
+        Parameter
+        ---------
+        dimensionless: bool
+            whether to return the work in units of thermal energy
+        """
+        work = self.getGlobalVariableByName("protocol_work")
+
+        if dimensionless:
+            return work / self.getGlobalVariableByName("kT")
+        else:
+            return work

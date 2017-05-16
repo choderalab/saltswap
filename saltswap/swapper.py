@@ -76,6 +76,8 @@ import math
 import random
 import numpy as np
 import simtk.unit as units
+from .integrators import GHMCIntegrator, NCMCMetpropolizedGeodesicBAOAB
+from openmmtools.integrators import ExternalPerturbationLangevinIntegrator
 
 # MODULE CONSTANTS
 kB = units.BOLTZMANN_CONSTANT_kB * units.AVOGADRO_CONSTANT_NA
@@ -113,8 +115,8 @@ class Swapper(object):
 
     """
 
-    def __init__(self, system, topology, temperature, delta_chem, integrator, pressure=None, nattempts_per_update=50,
-                 npert=1, nprop=0, propagator='GHMC', waterName="HOH", cationName='Na+', anionName='Cl-'):
+    def __init__(self, system, topology, temperature, delta_chem, ncmc_integrator=None, pressure=None, nattempts_per_update=1,
+                 npert=1, nprop=0, work_measurement='internal', waterName="HOH", cationName='Na+', anionName='Cl-'):
         """
         Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
 
@@ -129,18 +131,18 @@ class Swapper(object):
         delta_chem : float or unit.Quantity
             The difference in chemical potential for swapping 2 water molecules for Na Cl.
             If it is a float, it is assumed to be in units of kT.
-        integrator : simtk.openmm.integrator
-            The integrator used for dynamics outside of Swapper
+        ncmc_integrator : simtk.openmm.integrator
+            The integrator used for NCMC propagation of insertion and deletions
         pressure : simtk.unit.Quantity compatible with atmospheres, optional, default=None
             For explicit solvent simulations, the pressure.
         npert : integer
-            Number of _ncmc perturbation kernels. Set to 1 for instantaneous switching
+            Number of ncmc perturbation kernels. Set to 1 for instantaneous switching
         nprop : integer
-            Number of propagation kernels (MD steps) per _ncmc perturbation kernel. Set to 0 for instantaneous switching
-        propagator : str
-            The name of the _ncmc propagator
+            Number of propagation kernels (MD steps) per ncmc perturbation kernel. Set to 0 for instantaneous switching
+        work_measurement : str
+            The name of method used to calculate the work of the NCMC protocol
         ncmc_timestep : simtk.unit.Quantity with units compatible with femtoseconds
-            Timestep to use for _ncmc switching
+            Timestep to use for ncmc switching
         waterName = str, optional, default='HOH'
             Name of water residue that will be exchanged with salt
         cationName : str, optional, default='Na+'
@@ -162,16 +164,17 @@ class Swapper(object):
         self.anionName = anionName
         self.cationName = cationName
         self.waterName = waterName
-        self.integrator = integrator
+        self.ncmc_integrator = ncmc_integrator
 
-        proplist = ['GHMC', 'GHMC_old', 'velocityVerlet']
-        if propagator in proplist:
-            self.propagator = propagator
-        elif propagator not in proplist and npert == 0:
+        work_method_list = ['internal', 'external']
+        if work_measurement in work_method_list:
+            self.work_measurement = work_measurement
+        elif work_measurement not in work_method_list and npert == 0:
             pass
         else:
-            raise Exception('_ncmc propagator {0} not in supported list {1}'.format(propagator, proplist))
-
+            raise Exception('Method to calculate NCMC work, "{0}", not in supported list {1}'.format(work_measurement,
+                                                                                                     work_method_list))
+        # Saving the NCMC parameters
         self.npert = npert
         self.nprop = nprop
 
@@ -181,7 +184,7 @@ class Swapper(object):
             if force.__class__.__name__ == 'NonbondedForce':
                 self.forces_to_update = force
 
-        # Record the forces that need to be swicthed off for _ncmc
+        # Record the forces that need to be swicthed off for ncmc
         forces = {system.getForce(index).__class__.__name__: system.getForce(index) for index in
                   range(system.getNumForces())}
         # Control center mass remover
@@ -205,6 +208,7 @@ class Swapper(object):
         self.mutable_residues = self._identify_residues(self.topology,
                                                         residue_names=(self.waterName, self.anionName, self.cationName))
 
+        # Describing the identities of water and ions with numpy vectors
         self.stateVector = self._initialize_state_vector()
         self.water_parameters = self._retrieve_residue_parameters(self.topology, self.waterName)
         self.cation_parameters = self._initialize_ion_parameters(ion_name=self.cationName, ion_params=None)
@@ -212,8 +216,6 @@ class Swapper(object):
 
         # Setting the perturbation pathway for
         self._set_parampath()
-
-        # Describing the identities of water and ions with numpy vectors
 
         # Track simulation state
         # self.kin_energies = units.Quantity(list(), units.kilocalorie_per_mole)
@@ -225,7 +227,7 @@ class Swapper(object):
         # Reset statistics.
         self.reset_statistics()
 
-        # For comparing _ncmc and instance switching energies only:
+        # For comparing ncmc and instance switching energies only:
         # self.nrg_ncmc = []
         # self.nrg_isnt = []
 
@@ -234,19 +236,19 @@ class Swapper(object):
         self.work_rm = []
         self.work_add_per_step = []
         self.work_rm_per_step = []
-        self.naccepted_ghmc = []
-        # For counting the number of NaNs I get in _ncmc. These are automatically rejected.
+        self.naccepted_ncmc_integrator = []
+
+        # For counting the number of NaNs I get in ncmc. These are automatically rejected.
         self.nan = 0
-        return
 
     def _set_parampath(self, lj_step=1):
         """
         Produce an interpolation between the non-bonded forcefield parameters of water and ion parameters, with the
         option to perturb the partial charges more slowly than the Lennard-Jones (LJ) parameters. The interpolation serves
-        as a path for _ncmc.
+        as a path for ncmc.
 
         The perturbation of LJ parameters is slowed relative to the partial charge perturbation by introducing a lag in
-        the update of the LJ path, which is specified by lj_step.  With lj_step > 1, more of the _ncmc protocol is spent
+        the update of the LJ path, which is specified by lj_step.  With lj_step > 1, more of the ncmc protocol is spent
         on the partial charge parameters.
 
         Parameters
@@ -283,7 +285,7 @@ class Swapper(object):
             else:
                 npert_lj = np.floor(float(self.npert) / float(lj_step))
         # For each atom in the water model (indexed by atm_ind), the parameters are linearly interpolated between the ions.
-        # Both the forward and reverse directions (ie wat2cat and cat2wat) are calculated to save time at each _ncmc perturbation
+        # Both the forward and reverse directions (ie wat2cat and cat2wat) are calculated to save time at each ncmc perturbation
         n_lj = 0
         for n in range(self.npert + 1):
             frac_charge = float(n) / float(self.npert)
@@ -425,7 +427,57 @@ class Swapper(object):
                 stateVector[i] = 2
         return stateVector
 
-    def _ncmc(self, context, npert, nprop, mode, exchange_indices, propagator='GHMC'):
+    def compare_protocol_work(self, context):
+        """
+        Test implementation of NCMC to compare two different methods of calculating protocol work.
+
+        Parameters
+        ----------
+        context : simtk.openmm.Context
+            The context to update
+        """
+        # Randomly pick waters to turn into salt
+        mode='add salt'
+        exchange_indices= np.random.choice(a=np.where(self.stateVector == 0)[0], size=2, replace=False)
+
+        if self.cm_remover is not None:
+            self.cm_remover.setFrequency(0)
+
+        # Reset protocol work
+        self.ncmc_integrator.setGlobalVariableByName("first_step", 0)
+
+        internal_work = np.zeros(self.npert + 1)
+        external_work = np.zeros(self.npert + 1)
+        ext_wrk = 0.0
+        # Propagation
+        self.ncmc_integrator.step(1)
+        for stage in range(self.npert + 1):
+            # Energy before perturbation
+            pot_initial = self._get_potential_energy(context)
+            # Perturbation
+            self._update_forces(mode, exchange_indices, stage)
+            self.forces_to_update.updateParametersInContext(context)
+            pot_final = self._get_potential_energy(context)
+            # Energy after perturbation
+            ext_wrk += (pot_final - pot_initial) / self.kT
+            external_work[stage] = ext_wrk
+            # Propagation
+            self.ncmc_integrator.step(1)
+            internal_work[stage] = self.ncmc_integrator.get_protocol_work(dimensionless=True)
+
+        # Re-instate center of mass motion if on.
+        if self.cm_remover is not None:
+            self.cm_remover.setFrequency(self.cm_remover_freq)
+
+        # Return the salt that has been added.
+        self._update_forces('remove salt', exchange_indices, stage=self.npert)
+        self.forces_to_update.updateParametersInContext(context)
+
+        # I don't care about restoring the positions and velocities as this is a test.
+
+        return internal_work, external_work
+
+    def _ncmc(self, context, npert, nprop, mode, exchange_indices, work_measurement='internal'):
         """
         Updates the context with either inserted or deleted salt using non-equilibrium candidate Monte Carlo.
 
@@ -440,78 +492,59 @@ class Swapper(object):
         context : simtk.openmm.Context
             The context to update
         npert : int
-            The number of _ncmc perturbation-propagation kernels to use.
+            The number of ncmc perturbation-propagation kernels to use.
         nprop : int
             The number of propagation steps per perturbation kernel
         mode : string
             Either 'add salt' or 'remove  salt', which is passed to '_update_forces'
         exchange_indices : numpy array
             Two element vector containing the residue indices that have been changed
-        propagator : str
-            The name of propagator.
+        work_measurement : str
+            The method used to calculate the protocol work of the NCMC propagator.
 
         Returns
         -------
         work: float
             The work for appropriate for the stated propagator in units of KT.
         cumulative_work: float
-            The cumulative protocol work for each _ncmc step
+            The cumulative protocol work for each ncmc step
 
         """
         if self.cm_remover is not None:
             self.cm_remover.setFrequency(0)
 
         cumulative_work = np.zeros(npert + 1)
-        self.integrator.setCurrentIntegrator(1)
-        # TODO: remove velocity Verlet integrator
-        if propagator == 'velocityVerlet':
-            # Turn the barostat off, as volume must be constant for sympletic integrator
-            if self.barostat is not None:
-                self.barostat.setFrequency(0)
 
-            vv = self.integrator.getIntegrator(1)
-            # Get initial total energy
-            logp_initial, pot, kin = self._compute_log_probability(context)
+        if work_measurement == 'internal':
+            self.ncmc_integrator.setGlobalVariableByName("first_step", 0)
             # Propagation
-            self.integrator.step(nprop)
+            self.ncmc_integrator.step(1)
             for stage in range(npert + 1):
                 # Perturbation
                 self._update_forces(mode, exchange_indices, stage)
                 self.forces_to_update.updateParametersInContext(context)
                 # Propagation
-                vv.step(nprop)
-            # Get final total energy and calculate total work
-            logp_final, pot, kin = self._compute_log_probability(context)
-            work = logp_initial - logp_final
+                self.ncmc_integrator.step(1)
+                cumulative_work[stage] = self.ncmc_integrator.get_protocol_work(dimensionless=True)
 
-            # Turn the barostat back on
-            if self.barostat is not None:
-                self.barostat.setFrequency(self.barofreq)
-        elif propagator == 'GHMC':
-            ghmc = self.integrator.getIntegrator(1)
-            ghmc.setGlobalVariableByName("ntrials", 0)  # Reset the internally accumulated work
-            ghmc.setGlobalVariableByName("naccept", 0)
-            # Propagation
-            ghmc.step(1)
-            for stage in range(npert + 1):
-                # Perturbation
-                self._update_forces(mode, exchange_indices, stage)
-                self.forces_to_update.updateParametersInContext(context)
-                # Propagation
-                ghmc.step(1)
-                cumulative_work[stage] = ghmc.getGlobalVariableByName('work') / self.kT_unitless
             # Extract the internally calculated work from the integrator
-            work = ghmc.getGlobalVariableByName('work') / self.kT_unitless
-            # Save the acceptance rate for the _ncmc protocol
-            self.naccepted_ghmc.append(
-                ghmc.getGlobalVariableByName('naccept') / ghmc.getGlobalVariableByName('ntrials'))
-        elif propagator == 'GHMC_old':
-            # Like the GHMC integrator above, except that energies are calculated with _get_potential_energy() for testing and benchmarking
-            # Created due to errors in the energy calculations with CustomIntegrator.
-            ghmc = self.integrator.getIntegrator(1)
+            #work = ncmc_integrator.getGlobalVariableByName('protocol_work') / self.kT_unitless
+            work = self.ncmc_integrator.get_protocol_work(dimensionless=True)
+
+            # Save the acceptance rate for the ncmc protocol if the propagator is Metropolized.
+            try:
+                self.naccepted_ncmc_integrator.append(self.ncmc_integrator.getGlobalVariableByName('naccept') / self.ncmc_integrator.getGlobalVariableByName('ntrials'))
+            except:
+                self.naccepted_ncmc_integrator.append(0.0)
+
+        elif work_measurement == 'external':
+            # Like the GHMC integrator above, except that energies are calculated with _get_potential_energy() for
+            # testing and benchmarking. Option came about due to errors in the energy calculations with CustomIntegrator
+            # that have since been fixed.
+
             work = 0.0  # Unitless work
             # Propagation
-            ghmc.step(nprop)
+            self.ncmc_integrator.step(nprop)
             for stage in range(npert + 1):
                 # Getting the potential energy before the perturbation
                 pot_initial = self._get_potential_energy(context)
@@ -521,16 +554,22 @@ class Swapper(object):
                 # Getting the potential energy after the perturbation
                 pot_final = self._get_potential_energy(context)
                 # Propagation
-                ghmc.step(nprop)
+                self.ncmc_integrator.step(nprop)
                 # Update the accumulated work
                 work += (pot_final - pot_initial) / self.kT
                 cumulative_work[stage] = work
-            # Save the acceptance rate for the _ncmc protocol
-            self.naccepted_ghmc.append(
-                ghmc.getGlobalVariableByName('naccept') / ghmc.getGlobalVariableByName('ntrials'))
+
+            # Save the acceptance rate for the ncmc protocol
+            try:
+                self.naccepted_ncmc_integrator.append(
+                    self.ncmc_integrator.getGlobalVariableByName('naccept') / ncmc_integrator.getGlobalVariableByName('ntrials'))
+            except:
+                self.naccepted_ncmc_integrator.append(0.0)
+
         else:
-            raise Exception('Propagator "{0}" not recognized'.format(propagator))
-        self.integrator.setCurrentIntegrator(0)
+            raise Exception('Method to calculate work, "{0}", not recognized'.format(work_measurement))
+
+        #self.ncmc_integrator.setCurrentIntegrator(0)
 
         if self.cm_remover is not None:
             self.cm_remover.setFrequency(self.cm_remover_freq)
@@ -556,7 +595,7 @@ class Swapper(object):
         if type(penalty) == float:
             penalty = [penalty, -penalty]
 
-        # If using _ncmc, store initial positions.
+        # If using ncmc, store initial positions.
         if self.nprop > 0:
             initial_positions = context.getState(getPositions=True).getPositions()
             initial_velocities = context.getState(getVelocities=True).getVelocities()
@@ -575,8 +614,8 @@ class Swapper(object):
             cost = penalty[0]  # The free energy to remove salt and add 2 waters to bulk water
         elif (sum(self.stateVector == 1) >= saltmax):
             mode = "remove salt"
-            cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)
-            anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)
+            cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)[0]
+            anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)[0]
             change_indices = np.array([cation_index, anion_index])
             log_accept -= np.log(2)  # Due to asymmetric proposal probabilities
             cost = penalty[1]
@@ -586,19 +625,20 @@ class Swapper(object):
             cost = penalty[0]
         else:
             mode = "remove salt"
-            cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)
-            anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)
+            cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)[0]
+            anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)[0]
             change_indices = np.array([cation_index, anion_index])
             cost = penalty[1]
 
-        # Perform perturbation to remove or add salt with _ncmc and calculate energies
+        # Perform perturbation to remove or add salt with ncmc and calculate energies
         if self.nprop > 0:
             try:
                 work, cumulative_work = self._ncmc(context, self.npert, self.nprop, mode, change_indices,
-                                                   propagator=self.propagator)
+                                                   work_measurement=self.work_measurement)
             except Exception as detail:
-                work = 1000000000000.0  # If the simulation explodes during _ncmc, reject with high work
+                work = np.inf  # If the simulation explodes during ncmc, reject with high work
                 cumulative_work = 0.0
+                print(detail)
                 if detail[0] == 'Particle coordinate is nan':
                     self.nan += 1
                 else:
@@ -777,7 +817,7 @@ class Swapper(object):
             The context to update
         nattempts : integer
             Number of salt insertion and deletion moves to attempt.
-        cost : float or units.Quantity
+        cost : float, int, or units.Quantity
             The difference in chemical potential of two water molecules and an anion and cation.
             If cost is a unit.Quantity, the cost must be in kJ/mol. If it is a float, it is assumed to be in units
             of kT.
@@ -786,17 +826,27 @@ class Swapper(object):
             roughly half the total number of water molecules.
 
         """
-        if nattempts == None: nattempts = self.nattempts_per_update
-        if cost == None:
-            cost = [self.delta_chem / self.kT,
-                    -self.delta_chem / self.kT]  # [free energy to add salt, free energy to remove salt]
-        elif type(cost) == units.Quantity:
+        if nattempts == None:
+            nattempts = self.nattempts_per_update
+
+        # If no cost is supplied, use the supplied chemical potential
+        if cost is None:
+            cost = self.delta_chem
+
+        # Check the type of the cost to ensure that it enters into the acceptance test as unitless quantity.
+        if type(cost) == units.Quantity:
+            # [free energy to add salt, free energy to remove salt]
             cost = [cost / self.kT, -cost / self.kT]
-        elif type(cost) == float or type(cost) == int:
+        elif type(cost) == float:
+            # [free energy to add salt, free energy to remove salt]
             cost = [cost, -cost]
+        elif type(cost) == int:
+            # [free energy to add salt, free energy to remove salt]
+            cost = [float(cost), -float(cost)]
         else:
-            raise Exception('Penalty (delta_chem) for adding or removing salt "{0}" not recognized'.format(cost))
-        # Perform a number of protonation state update trials.
+            raise Exception('The data type of the chemical potential, "{0}", is not recognized'.format(cost))
+
+        # Perform a number of trial salt insertion/deletion attempts.
         for attempt in range(nattempts):
             self.attempt_identity_swap(context, penalty=cost, saltmax=saltmax)
         return
