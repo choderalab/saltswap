@@ -42,7 +42,7 @@ if __name__ == "__main__":
     # Initialize the class that can sample over MD and salt-water exchanges.
     timestep = args.timestep*unit.femtoseconds
     sampler = MCMCSampler(wbox.system, wbox.topology, wbox.positions, temperature=temperature, pressure=pressure, npert=args.npert,
-                          nprop=args.nprop, ncmc_propagator=args.propagator, ncmc_timestep = timestep, delta_chem=delta_chem, mdsteps=args.steps, saltsteps=args.attempts, platform=args.platform)
+                          nprop=args.nprop, propagator=args.propagator, timestep= timestep, delta_chem=delta_chem, mdsteps=args.steps, saltsteps=args.attempts, platform=args.platform)
 
     # Thermalize
     sampler.gen_config(mdsteps=args.equilibration)
@@ -85,7 +85,7 @@ if __name__ == "__main__":
         cnts = sampler.saltswap.get_identity_counts()
         acc = sampler.saltswap.get_acceptance_probability()
         if args.nprop != 0 and args.propagator == 'GHMC':
-            ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ghmc))
+            ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ncmc_integrator))
         else:
             ghmc_acc = 0
         sampler.saltswap.naccepted_ghmc = []
