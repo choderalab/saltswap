@@ -39,15 +39,15 @@ class TestZeroEnergySwaps(object):
         # Create the box of water to simulate
         wbox = WaterBox(box_edge = size, nonbondedMethod=app.PME, cutoff=size/2 - 0.5*unit.angstrom)
         dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem=Dmu, nprop=0, npert=1)
-        dummystate.saltswap.cation_parameters = dummystate.saltswap.water_parameters    # Setting the cation parameters to water's
-        dummystate.saltswap.anion_parameters = dummystate.saltswap.water_parameters     # Setting the anion parameters to water's
-        dummystate.saltswap._set_parampath()     # Recalculating the peturbation path for new paramters
+        dummystate.swapper.cation_parameters = dummystate.swapper.water_parameters    # Setting the cation parameters to water's
+        dummystate.swapper.anion_parameters = dummystate.swapper.water_parameters     # Setting the anion parameters to water's
+        dummystate.swapper._set_parampath()     # Recalculating the peturbation path for new paramters
 
         # Sampling. Recording the ratio of water to salt every 20 attempts and repeated Nsamps times.
         ratio = []
         for batch in range(Nsamps):
             dummystate.gen_label(saltsteps=10)
-            (nwats,nsalt,junk) = dummystate.saltswap.get_identity_counts()
+            (nwats,nsalt,junk) = dummystate.swapper.get_identity_counts()
             ratio.append(1.0*nwats/nsalt)
         ratio = np.array(ratio)
         ratio_mean = np.mean(ratio)
@@ -76,15 +76,15 @@ class TestZeroEnergySwaps(object):
         # Create the box of water to simulate
         wbox = WaterBox(box_edge=size, nonbondedMethod=app.PME, cutoff=size/2 - 0.5*unit.angstrom)
         dummystate = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu, nprop=1, npert=3, propagator='GHMC')
-        dummystate.saltswap.cation_parameters = dummystate.saltswap.water_parameters    # Setting the cation parameters to water's
-        dummystate.saltswap.anion_parameters = dummystate.saltswap.water_parameters     # Setting the anion parameters to water's
-        dummystate.saltswap._set_parampath()     # Recalculating the peturbation path for new paramters
+        dummystate.swapper.cation_parameters = dummystate.swapper.water_parameters    # Setting the cation parameters to water's
+        dummystate.swapper.anion_parameters = dummystate.swapper.water_parameters     # Setting the anion parameters to water's
+        dummystate.swapper._set_parampath()     # Recalculating the peturbation path for new paramters
 
         # Sampling. Recording the ratio of water to salt every 20 attempts and repeated Nsamps times.
         ratio = []
         for batch in range(Nsamps):
             dummystate.gen_label(saltsteps=10)
-            (nwats,nsalt,junk) = dummystate.saltswap.get_identity_counts()
+            (nwats,nsalt,junk) = dummystate.swapper.get_identity_counts()
             ratio.append(1.0*nwats/nsalt)
         ratio = np.array(ratio)
         ratio_mean = np.mean(ratio)

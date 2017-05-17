@@ -141,7 +141,7 @@ class MCMCSampler(object):
         else:
             ncmc_integrator = None
             if propagator == proplist[0]:
-                self.integrator = GHMCIntegrator(temperature, collision_rate, 2.0 * unit.femtoseconds, nsteps=1)
+                self.integrator = GHMCIntegrator(temperature, collision_rate, timestep, nsteps=1)
             elif propagator == proplist[1]:
                 self.integrator = open_integrators.LangevinIntegrator(splitting="V R O R V",
                                                                                   temperature=temperature,
@@ -169,10 +169,10 @@ class MCMCSampler(object):
         self.context.setVelocitiesToTemperature(temperature)
 
         # Initialising the saltswap object
-        self.saltswap = Swapper(system=system, topology=topology, temperature=temperature, delta_chem=delta_chem,
-                                ncmc_integrator=ncmc_integrator, pressure=pressure,
-                                npert=npert, nprop=nprop, work_measurement='internal', waterName=waterName,
-                                cationName=cationName, anionName=anionName)
+        self.swapper = Swapper(system=system, topology=topology, temperature=temperature, delta_chem=delta_chem,
+                               ncmc_integrator=ncmc_integrator, pressure=pressure,
+                               npert=npert, nprop=nprop, work_measurement='internal', waterName=waterName,
+                               cationName=cationName, anionName=anionName)
 
     def gen_config(self, mdsteps=None):
         """
@@ -211,9 +211,9 @@ class MCMCSampler(object):
         if self.nprop != 0:
             self.integrator.setCurrentIntegrator(1)
         if saltsteps == None:
-            self.saltswap.update(self.context, nattempts=self.saltsteps, cost=cost, saltmax=self.saltmax)
+            self.swapper.update(self.context, nattempts=self.saltsteps, cost=cost, saltmax=self.saltmax)
         else:
-            self.saltswap.update(self.context, nattempts=saltsteps, cost=cost, saltmax=self.saltmax)
+            self.swapper.update(self.context, nattempts=saltsteps, cost=cost, saltmax=self.saltmax)
 
     def move(self, mdsteps=None, saltsteps=None, delta_chem=None):
         """
@@ -291,7 +291,7 @@ class SaltSAMS(MCMCSampler):
         The find which distribution the Sampler is in, equal to the number of salt pairs. The number of salt pairs
         serves as the index for target density and free energy.
         """
-        (junk1, nsalt, junk2) = self.saltswap.get_identity_counts()
+        (junk1, nsalt, junk2) = self.swapper.get_identity_counts()
         self.nsalt = nsalt
         self.statetime.append(nsalt)
 
@@ -314,7 +314,7 @@ class SaltSAMS(MCMCSampler):
             else:
                 penalty = [self.zeta[self.nsalt + 1] - self.zeta[self.nsalt],
                            self.zeta[self.nsalt - 1] - self.zeta[self.nsalt]]
-            self.saltswap.attempt_identity_swap(self.context, penalty, self.saltmax)
+            self.swapper.attempt_identity_swap(self.context, penalty, self.saltmax)
             self.update_state()
 
     def adapt_zeta(self):

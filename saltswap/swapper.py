@@ -238,6 +238,9 @@ class Swapper(object):
         self.work_rm_per_step = []
         self.naccepted_ncmc_integrator = []
 
+        self.proposal = [0, 0]      # [initial number of salt, proposed number of salt]
+        self.cumulative_work = np.zeros(self.npert)  # The work that corresponds to the above proposal
+
         # For counting the number of NaNs I get in ncmc. These are automatically rejected.
         self.nan = 0
 
@@ -606,13 +609,15 @@ class Swapper(object):
 
         # Initializing the exponent of the acceptance test. Adding to it as we go along.
         log_accept = 0.0
+
         # Whether to delete or add salt by selecting random water molecules to turn into a cation and an anion or vice versa.
-        if (sum(self.stateVector == 1) == 0):
+        nwats, ncation, nanion = self.get_identity_counts()
+        if (ncation == 0):
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0], size=2, replace=False)
             mode = "add salt"
             log_accept -= np.log(2)  # Due to asymmetric proposal probabilities
             cost = penalty[0]  # The free energy to remove salt and add 2 waters to bulk water
-        elif (sum(self.stateVector == 1) >= saltmax):
+        elif (ncation >= saltmax):
             mode = "remove salt"
             cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)[0]
             anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)[0]
@@ -652,11 +657,15 @@ class Swapper(object):
             work = (pot_final - pot_initial) / self.kT
             cumulative_work = 0.0
 
-        # Computing the work (already in units of KT)
+        # Saving the work and proposal (already in units of KT)
         if mode == "remove salt":
+            self.proposal = [ncation, ncation - 1]
+            self.cumulative_work = cumulative_work
             self.work_rm.append(work)
             self.work_rm_per_step.append(cumulative_work)
         else:
+            self.proposal = [ncation, ncation + 1]
+            self.cumulative_work = cumulative_work
             self.work_add.append(work)
             self.work_add_per_step.append(cumulative_work)
 
