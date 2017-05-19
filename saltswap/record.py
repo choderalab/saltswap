@@ -3,20 +3,24 @@ File to record saltswap simulation data with netcdf.
 """
 from netCDF4 import Dataset
 import numpy as np
-from simtk import unit, openmm
 import simtk
 
 # The simulation parameters that will be recorded from Swapper.
 swapper_control_attributes = ('temperature', 'pressure', 'delta_chem', 'npert')
 
 # Establishing default units for recording data. The netcdf file will also be storing units where appropriate.
-variable_states = {'volume':unit.nanometer**3, 'potential energy':unit.kilojoule_per_mole}
+variable_states = {'volume':simtk.unit.nanometer**3, 'potential energy':simtk.unit.kilojoule_per_mole}
+
+# All variables that will be stored in the sampler state group
+sample_variables = ['identities','species counts','cumulative work','proposal','naccepted']
+for var in variable_states:
+    sample_variables.append(var)
 
 class CreateNetCDF(object):
     """
     Class to record data from MD and saltswap simulations
     """
-    def __init__(self, filename):
+    def __init__(self, filename, zlib=True):
         """
         Create a netcdf file to store saltswap simulation data.
 
@@ -25,7 +29,7 @@ class CreateNetCDF(object):
         filename: str
             the name of the netcdf file that will be created
         """
-        self.ncfile = Dataset(filename, 'w', format='NETCDF4')
+        self.ncfile = Dataset(filename, 'w', format='NETCDF4', zlib=zlib)
         self.scalar_dim = self.ncfile.createDimension('scalar', 1)
         self.string_dim = self.ncfile.createDimension('string', 0)
         self.ncfile.createDimension('iteration', None)
@@ -33,7 +37,7 @@ class CreateNetCDF(object):
 
     def init_control_variables(self, swapper, variable_dic=None):
         """
-        Initial simulation saving netcdf parameters.
+        Initialize netcdf file to store simulation inputs, such as integrator timestep, temperature, etc.
 
         Parameters
         ----------
@@ -81,6 +85,11 @@ class CreateNetCDF(object):
     def init_sample_state_variables(self, swapper):
         """
         Recording the simulation variables.
+
+        Parameters
+        ----------
+        swapper: saltswap.swapper
+            the driver for saltswap
         """
         sample_state_group = self.ncfile.createGroup('Sample state data')
 
@@ -104,7 +113,7 @@ class CreateNetCDF(object):
         var.unit = 'unitless'
         # The corresponding proposal for the NCMC protocol work
         sample_state_group.createDimension('proposal', 2)
-        sample_state_group.createVariable('ncmc proposal', 'i8', ('iteration', 'attempt', 'proposal',))
+        sample_state_group.createVariable('proposal', 'i8', ('iteration', 'attempt', 'proposal',))
 
         # The number of saltswap moves that have been accepted
         sample_state_group.createVariable('naccepted', 'i8', ('iteration', 'attempt', 'scalar',))
@@ -112,7 +121,15 @@ class CreateNetCDF(object):
         self.ncfile.sync()
 
     def create_netcdf(self, swapper, variable_dic=None):
-
+        """
+        Create a
+        Parameters
+        ----------
+        swapper: saltswap.swapper
+            the driver for saltswap
+        variable_dic: dic
+            dictionary containing additional parameters to be stored
+        """
         self.init_control_variables(swapper, variable_dic)
         self.init_sample_state_variables(swapper)
 
@@ -123,6 +140,15 @@ class CreateNetCDF(object):
 def record_netcdf(ncfile, context, swapper, iteration, attempt=0, sync=True):
     """
     Store the variables in the context and swapper objects.
+
+    Parameters
+    ----------
+    ncfile: netCDF4._netCDF4.Dataset
+        Netcdf data object that has already been initialized to record saltswap simulation data.
+    context: simtk.openmm.openmm.Context
+        Contains the OpenMM simulation data and parameters
+    swapper: saltswap.swapper
+        the driver for saltswap
     """
     # Openmm state information
     state = context.getState(getPositions=True, getEnergy=True, enforcePeriodicBox=True)
@@ -140,7 +166,7 @@ def record_netcdf(ncfile, context, swapper, iteration, attempt=0, sync=True):
     ncfile.groups['Sample state data']['species counts'][iteration, :] = swapper.get_identity_counts()
 
     # saltswap MCMC information
-    ncfile.groups['Sample state data']['ncmc proposal'][iteration, attempt, :] = swapper.proposal
+    ncfile.groups['Sample state data']['proposal'][iteration, attempt, :] = swapper.proposal
     ncfile.groups['Sample state data']['cumulative work'][iteration, attempt, :] = swapper.cumulative_work
     ncfile.groups['Sample state data']['naccepted'][iteration, attempt, :] = swapper.naccepted
 
