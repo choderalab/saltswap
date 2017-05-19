@@ -46,7 +46,7 @@ class TestParamPerturbations(object):
         size = 15.0 * unit.angstrom
         wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
         state = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = 0, nprop = 0, npert = 1)
-        saltswap = state.saltswap
+        saltswap = state.swapper
 
         # Extract the water parameters of the system
         param_matrix = self._get_params(saltswap,0)
@@ -69,7 +69,7 @@ class TestParamPerturbations(object):
         size = 15.0 * unit.angstrom
         wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
         state = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu_insert, nprop = 0, npert = 1)
-        saltswap = state.saltswap
+        saltswap = state.swapper
 
         # Get the parameters of water before any perturbations
         water_inital_params = copy.deepcopy( self._get_params(saltswap,0) )
@@ -106,7 +106,7 @@ class TestParamPerturbations(object):
         size = 15.0 * unit.angstrom
         wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
         state = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu_insert, nprop = 1, npert = 10)
-        saltswap = state.saltswap
+        saltswap = state.swapper
 
         # Insert salt using a chemical potential that makes this highly likely. Stop when 1 salt pair has been inserted.
         nosalt = True
@@ -138,7 +138,7 @@ class TestParamPerturbations(object):
         size = 15.0 * unit.angstrom
         wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
         state = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu_insert, nprop = 0, npert = 1)
-        saltswap = state.saltswap
+        saltswap = state.swapper
 
         # Get the parameters of water before any perturbations
         water_inital_params = copy.deepcopy( self._get_params(saltswap,0) )
@@ -173,7 +173,7 @@ class TestParamPerturbations(object):
         size = 15.0 * unit.angstrom
         wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
         state = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu_insert, nprop = 1, npert = 10)
-        saltswap = state.saltswap
+        saltswap = state.swapper
 
         # Get the parameters of water before any perturbations
         water_inital_params = copy.deepcopy( self._get_params(saltswap,0) )

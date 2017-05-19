@@ -93,15 +93,15 @@ if __name__ == "__main__":
         sampler.move()
         iter_time = time() - iter_start
         # Saving acceptance probability data:
-        cnts = sampler.saltswap.get_identity_counts()
-        acc = sampler.saltswap.get_acceptance_probability()
+        cnts = sampler.swapper.get_identity_counts()
+        acc = sampler.swapper.get_acceptance_probability()
         if args.nprop != 0 and args.propagator == 'GHMC':
-            ghmc_acc = np.mean(np.array(sampler.saltswap.naccepted_ncmc_integrator))
+            ghmc_acc = np.mean(np.array(sampler.swapper.naccepted_ncmc_integrator))
             equil_acc = ghmc_equilibrium.getGlobalVariableByName('naccept') / ghmc_equilibrium.getGlobalVariableByName('ntrials')
         else:
             ghmc_acc = 0.0
             equil_acc = 0.0
-        sampler.saltswap.naccepted_ncmc_integrator = []
+        sampler.swapper.naccepted_ncmc_integrator = []
         f = open(args.data, 'a')
         s = "{:4} {:5} {:5}   {:0.2f}      {:0.2f}         {:0.2f}         {:0.1f}\n".format(i, cnts[0], cnts[1], round(acc,2), round(ghmc_acc,2), round(equil_acc,2), iter_time)
         f.write(s)
@@ -116,5 +116,5 @@ if __name__ == "__main__":
     f = open(args.data, 'a')
     s = "\nElapsed time in seconds = {:0.1f}".format(tm)
     f.write(s)
-    s = "\nNumber of NaNs = {:3}\n".format(sampler.saltswap.nan)
+    s = "\nNumber of NaNs = {:3}\n".format(sampler.swapper.nan)
     f.write(s)
