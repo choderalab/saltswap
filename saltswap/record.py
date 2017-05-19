@@ -20,7 +20,7 @@ class CreateNetCDF(object):
     """
     Class to record data from MD and saltswap simulations
     """
-    def __init__(self, filename, zlib=True):
+    def __init__(self, filename):
         """
         Create a netcdf file to store saltswap simulation data.
 
@@ -29,7 +29,7 @@ class CreateNetCDF(object):
         filename: str
             the name of the netcdf file that will be created
         """
-        self.ncfile = Dataset(filename, 'w', format='NETCDF4', zlib=zlib)
+        self.ncfile = Dataset(filename, 'w', format='NETCDF4')
         self.scalar_dim = self.ncfile.createDimension('scalar', 1)
         self.string_dim = self.ncfile.createDimension('string', 0)
         self.ncfile.createDimension('iteration', None)
@@ -95,28 +95,28 @@ class CreateNetCDF(object):
 
         # Scalar quantities with their units
         for variable in variable_states:
-            var = sample_state_group.createVariable(variable, 'f8', ('iteration', 'scalar'))
+            var = sample_state_group.createVariable(variable, 'f8', ('iteration', 'scalar'), zlib=True)
             var.unit = variable_states[variable].get_name()
 
         # Which molecule is which
         sample_state_group.createDimension('identity', len(swapper.mutable_residues))
-        sample_state_group.createVariable('identities', 'i8', ('iteration', 'identity'))
+        sample_state_group.createVariable('identities', 'i8', ('iteration', 'identity'), zlib=True)
 
         # How many water, cations, and anions there are.
         sample_state_group.createDimension('species', len(swapper.get_identity_counts()))
-        sample_state_group.createVariable('species counts', 'i8', ('iteration', 'species'))
+        sample_state_group.createVariable('species counts', 'i8', ('iteration', 'species'), zlib=True)
 
         # The cumulative work for each NCMC step in thermal units (i.e. unitless)
         sample_state_group.createDimension('attempt', None)
         sample_state_group.createDimension('npert', swapper.npert + 1)
-        var = sample_state_group.createVariable('cumulative work', 'f8', ('iteration', 'attempt', 'npert'))
+        var = sample_state_group.createVariable('cumulative work', 'f8', ('iteration', 'attempt', 'npert'), zlib=True)
         var.unit = 'unitless'
         # The corresponding proposal for the NCMC protocol work
         sample_state_group.createDimension('proposal', 2)
-        sample_state_group.createVariable('proposal', 'i8', ('iteration', 'attempt', 'proposal',))
+        sample_state_group.createVariable('proposal', 'i8', ('iteration', 'attempt', 'proposal',), zlib=True)
 
         # The number of saltswap moves that have been accepted
-        sample_state_group.createVariable('naccepted', 'i8', ('iteration', 'attempt', 'scalar',))
+        sample_state_group.createVariable('naccepted', 'i8', ('iteration', 'attempt', 'scalar',), zlib=True)
 
         self.ncfile.sync()
 
@@ -155,11 +155,11 @@ def record_netcdf(ncfile, context, swapper, iteration, attempt=0, sync=True):
 
     volume = state.getPeriodicBoxVolume()
     var_units = variable_states['volume']
-    ncfile.groups['Sample state data']['volume'][iteration, :] = volume.value_in_unit(var_units)
+    ncfile.groups['Sample state data']['volume'][iteration, 0] = volume.value_in_unit(var_units)
 
     potential_energy = state.getPotentialEnergy()
     var_units = variable_states['potential energy']
-    ncfile.groups['Sample state data']['potential energy'][iteration, :] = potential_energy .value_in_unit(var_units)
+    ncfile.groups['Sample state data']['potential energy'][iteration, 0] = potential_energy .value_in_unit(var_units)
 
     # saltswap state information
     ncfile.groups['Sample state data']['identities'][iteration, :] = swapper.stateVector
