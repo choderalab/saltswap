@@ -16,6 +16,7 @@ requirements:
     - numpy
     - setuptools
     - openmm
+    - openmmtools
 
   run:
     - python
@@ -23,6 +24,7 @@ requirements:
     - numpy
     - setuptools
     - openmm
+    - openmmtools
 
 test:
   requires:
