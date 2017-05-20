@@ -17,6 +17,7 @@ requirements:
     - setuptools
     - openmm
     - openmmtools
+    - netcdf4
 
   run:
     - python
@@ -25,6 +26,7 @@ requirements:
     - setuptools
     - openmm
     - openmmtools
+    - netcdf4
 
 test:
   requires:
