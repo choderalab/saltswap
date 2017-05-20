@@ -18,6 +18,7 @@ requirements:
     - openmm
     - openmmtools
     - netcdf4
+    - pytest
 
   run:
     - python
@@ -27,6 +28,7 @@ requirements:
     - openmm
     - openmmtools
     - netcdf4
+    - pytest
 
 test:
   requires:
