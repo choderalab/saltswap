@@ -117,6 +117,10 @@ class CreateNetCDF(object):
 
         # The number of saltswap moves that have been accepted
         sample_state_group.createVariable('naccepted', 'i8', ('iteration', 'attempt', 'scalar',), zlib=True)
+        sample_state_group.createVariable('nattempted', 'i8', ('iteration', 'attempt', 'scalar',), zlib=True)
+
+        # The log acceptance probability for each attempt
+        sample_state_group.createVariable('log_accept', 'f8', ('iteration', 'attempt', 'scalar',), zlib=True)
 
         self.ncfile.sync()
 
@@ -168,7 +172,9 @@ def record_netcdf(ncfile, context, swapper, iteration, attempt=0, sync=True):
     # saltswap MCMC information
     ncfile.groups['Sample state data']['proposal'][iteration, attempt, :] = swapper.proposal
     ncfile.groups['Sample state data']['cumulative work'][iteration, attempt, :] = swapper.cumulative_work
-    ncfile.groups['Sample state data']['naccepted'][iteration, attempt, :] = swapper.naccepted
+    ncfile.groups['Sample state data']['naccepted'][iteration, attempt, 0] = swapper.naccepted
+    ncfile.groups['Sample state data']['nattempted'][iteration, attempt, 0] = swapper.naccepted
+    ncfile.groups['Sample state data']['log_accept'][iteration, attempt, 0] =  swapper.log_accept
 
     if sync:
         ncfile.sync()
