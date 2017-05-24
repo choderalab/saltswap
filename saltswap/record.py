@@ -53,28 +53,28 @@ class CreateNetCDF(object):
         for attribute in swapper_control_attributes:
             atrb = getattr(swapper, attribute)
             if type(atrb) == simtk.unit.quantity.Quantity:
-                var = control_parms_group.createVariable(attribute, 'f8')
+                var = control_parms_group.createVariable(attribute, 'f4')
                 control_parms_group.variables[attribute][0] = atrb._value
                 var.unit = atrb.unit._name
             elif type(atrb) == float:
-                control_parms_group.createVariable(attribute, 'f8')
+                control_parms_group.createVariable(attribute, 'f4')
                 control_parms_group.variables[attribute][0] = atrb
             elif type(atrb) == int:
-                control_parms_group.createVariable(attribute, 'i8')
+                control_parms_group.createVariable(attribute, 'i4')
                 control_parms_group.variables[attribute][0] = atrb
 
         # Saving the control parameters that listed in the parameter dictionary:
         for attribute in variable_dic:
             atrb = variable_dic[attribute]
             if type(atrb) == simtk.unit.quantity.Quantity:
-                var = control_parms_group.createVariable(attribute, 'f8')
+                var = control_parms_group.createVariable(attribute, 'f4')
                 control_parms_group.variables[attribute][0] = atrb._value
                 var.unit = atrb.unit._name
             elif type(atrb) == float:
-                control_parms_group.createVariable(attribute, 'f8')
+                control_parms_group.createVariable(attribute, 'f4')
                 control_parms_group.variables[attribute][0] = atrb
             elif type(atrb) == int:
-                control_parms_group.createVariable(attribute, 'i8')
+                control_parms_group.createVariable(attribute, 'i4')
                 control_parms_group.variables[attribute][0] = atrb
             elif type(atrb) == str:
                 control_parms_group.createVariable(attribute, str, 'string')
@@ -95,32 +95,32 @@ class CreateNetCDF(object):
 
         # Scalar quantities with their units
         for variable in variable_states:
-            var = sample_state_group.createVariable(variable, 'f8', ('iteration', 'scalar'), zlib=True)
+            var = sample_state_group.createVariable(variable, 'f4', ('iteration'), zlib=True)
             var.unit = variable_states[variable].get_name()
 
         # Which molecule is which
         sample_state_group.createDimension('identity', len(swapper.mutable_residues))
-        sample_state_group.createVariable('identities', 'i8', ('iteration', 'identity'), zlib=True)
+        sample_state_group.createVariable('identities', 'i4', ('iteration', 'identity'), zlib=True)
 
         # How many water, cations, and anions there are.
         sample_state_group.createDimension('species', len(swapper.get_identity_counts()))
-        sample_state_group.createVariable('species counts', 'i8', ('iteration', 'species'), zlib=True)
+        sample_state_group.createVariable('species counts', 'i4', ('iteration', 'species'), zlib=True)
 
         # The cumulative work for each NCMC step in thermal units (i.e. unitless)
         sample_state_group.createDimension('attempt', None)
         sample_state_group.createDimension('npert', swapper.npert + 1)
-        var = sample_state_group.createVariable('cumulative work', 'f8', ('iteration', 'attempt', 'npert'), zlib=True)
+        var = sample_state_group.createVariable('cumulative work', 'f4', ('iteration', 'attempt', 'npert'), zlib=True)
         var.unit = 'unitless'
         # The corresponding proposal for the NCMC protocol work
         sample_state_group.createDimension('proposal', 2)
-        sample_state_group.createVariable('proposal', 'i8', ('iteration', 'attempt', 'proposal',), zlib=True)
+        sample_state_group.createVariable('proposal', 'i4', ('iteration', 'attempt', 'proposal',), zlib=True)
 
         # The number of saltswap moves that have been accepted
-        sample_state_group.createVariable('naccepted', 'i8', ('iteration', 'attempt', 'scalar',), zlib=True)
-        sample_state_group.createVariable('nattempted', 'i8', ('iteration', 'attempt', 'scalar',), zlib=True)
+        sample_state_group.createVariable('naccepted', 'i4', ('iteration', 'attempt',), zlib=True)
+        sample_state_group.createVariable('nattempted', 'i4', ('iteration', 'attempt'), zlib=True)
 
         # The log acceptance probability for each attempt
-        sample_state_group.createVariable('log_accept', 'f8', ('iteration', 'attempt', 'scalar',), zlib=True)
+        sample_state_group.createVariable('log_accept', 'f4', ('iteration', 'attempt'), zlib=True)
 
         self.ncfile.sync()
 
@@ -159,11 +159,11 @@ def record_netcdf(ncfile, context, swapper, iteration, attempt=0, sync=True):
 
     volume = state.getPeriodicBoxVolume()
     var_units = variable_states['volume']
-    ncfile.groups['Sample state data']['volume'][iteration, 0] = volume.value_in_unit(var_units)
+    ncfile.groups['Sample state data']['volume'][iteration] = volume.value_in_unit(var_units)
 
     potential_energy = state.getPotentialEnergy()
     var_units = variable_states['potential energy']
-    ncfile.groups['Sample state data']['potential energy'][iteration, 0] = potential_energy .value_in_unit(var_units)
+    ncfile.groups['Sample state data']['potential energy'][iteration] = potential_energy .value_in_unit(var_units)
 
     # saltswap state information
     ncfile.groups['Sample state data']['identities'][iteration, :] = swapper.stateVector
@@ -172,9 +172,9 @@ def record_netcdf(ncfile, context, swapper, iteration, attempt=0, sync=True):
     # saltswap MCMC information
     ncfile.groups['Sample state data']['proposal'][iteration, attempt, :] = swapper.proposal
     ncfile.groups['Sample state data']['cumulative work'][iteration, attempt, :] = swapper.cumulative_work
-    ncfile.groups['Sample state data']['naccepted'][iteration, attempt, 0] = swapper.naccepted
-    ncfile.groups['Sample state data']['nattempted'][iteration, attempt, 0] = swapper.naccepted
-    ncfile.groups['Sample state data']['log_accept'][iteration, attempt, 0] =  swapper.log_accept
+    ncfile.groups['Sample state data']['naccepted'][iteration, attempt] = swapper.naccepted
+    ncfile.groups['Sample state data']['nattempted'][iteration, attempt] = swapper.naccepted
+    ncfile.groups['Sample state data']['log_accept'][iteration, attempt] =  swapper.log_accept
 
     if sync:
         ncfile.sync()
