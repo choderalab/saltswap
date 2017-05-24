@@ -51,6 +51,8 @@ class TestRecorder(object):
         """
         Test that saving data occurs without error and can be loaded without error.
         """
+        from os import remove
+
         langevin, context, salinator = self.create_waterbox_example()
 
         # Control parameters for the simulation
@@ -58,7 +60,7 @@ class TestRecorder(object):
                                          'box_edge': 20.0*unit.angstrom, 'collision_rate': 90./unit.picoseconds}
 
         # Create the netcdf file
-        filename = 'test_recorder.nc'
+        filename = 'test_recorder_temporary_file.nc'
         creator = CreateNetCDF(filename)
         ncfile = creator.create_netcdf(salinator, simulation_control_parameters)
 
@@ -84,4 +86,6 @@ class TestRecorder(object):
         # Make sure the uploaded numerical values are the same as before
         for var, res in zip(sample_variables, saved_results):
             assert np.all(opened_ncfile.groups['Sample state data'][var][:] == res)
+
+        remove(filename)
 

@@ -217,29 +217,19 @@ class Swapper(object):
         # Setting the perturbation pathway for
         self._set_parampath()
 
-        # Track simulation state
-        # self.kin_energies = units.Quantity(list(), units.kilocalorie_per_mole)
-        # self.pot_energy = 0*units.kilocalorie_per_mole)
-
         # Store list of exceptions that may need to be modified.
         self.nattempts_per_update = nattempts_per_update
 
         # Reset statistics.
         self.reset_statistics()
-
-        # For comparing ncmc and instance switching energies only:
-        # self.nrg_ncmc = []
-        # self.nrg_isnt = []
-
-        # Saving the work values for adding and removing salt
-        self.work_add = []
-        self.work_rm = []
-        self.work_add_per_step = []
-        self.work_rm_per_step = []
         self.naccepted_ncmc_integrator = []
 
+        # Record the log acceptance probability for each proposal
+        self.log_accept = []
+
+        # Recording the cumulative work with the corresponding proposal
         self.proposal = [0, 0]      # [initial number of salt, proposed number of salt]
-        self.cumulative_work = np.zeros(self.npert)  # The work that corresponds to the above proposal
+        self.cumulative_work = np.zeros(self.npert + 1)  # The work that corresponds to the above proposal
 
         # For counting the number of NaNs I get in ncmc. These are automatically rejected.
         self.nan = 0
@@ -661,13 +651,9 @@ class Swapper(object):
         if mode == "remove salt":
             self.proposal = [ncation, ncation - 1]
             self.cumulative_work = cumulative_work
-            self.work_rm.append(work)
-            self.work_rm_per_step.append(cumulative_work)
         else:
             self.proposal = [ncation, ncation + 1]
             self.cumulative_work = cumulative_work
-            self.work_add.append(work)
-            self.work_add_per_step.append(cumulative_work)
 
         # Cost = F_final - F_initial, where F_initial is the free energy to have the current number of salt molecules.
         log_accept += -cost - work
@@ -677,6 +663,9 @@ class Swapper(object):
             log_accept += np.log(1.0 * nwats * (nwats - 1) / (nanion + 1) / (nanion + 1))
         else:
             log_accept += np.log(1.0 * ncation * nanion / (nwats + 1) / (nwats + 2))
+
+        # Record the log of the acceptance probability
+        self.log_accept = log_accept
 
         # Accept or reject:
         if (log_accept > 0.0) or (random.random() < math.exp(log_accept)):
