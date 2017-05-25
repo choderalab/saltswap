@@ -173,7 +173,7 @@ def record_netcdf(ncfile, context, swapper, iteration, attempt=0, sync=True):
     ncfile.groups['Sample state data']['proposal'][iteration, attempt, :] = swapper.proposal
     ncfile.groups['Sample state data']['cumulative work'][iteration, attempt, :] = swapper.cumulative_work
     ncfile.groups['Sample state data']['naccepted'][iteration, attempt] = swapper.naccepted
-    ncfile.groups['Sample state data']['nattempted'][iteration, attempt] = swapper.naccepted
+    ncfile.groups['Sample state data']['nattempted'][iteration, attempt] = swapper.nattempted
     ncfile.groups['Sample state data']['log_accept'][iteration, attempt] =  swapper.log_accept
 
     if sync:
