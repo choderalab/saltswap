@@ -590,8 +590,10 @@ class Swapper(object):
 
         # If using ncmc, store initial positions.
         if self.nprop > 0:
-            initial_positions = context.getState(getPositions=True).getPositions()
-            initial_velocities = context.getState(getVelocities=True).getVelocities()
+            state = context.getState(getPositions=True, getVelocities=True)
+            initial_positions = state.getPositions()
+            initial_box_vectors = state.getPeriodicBoxVectors()
+            initial_velocities = state.getVelocities()
 
         # Introducing a maximum capacity of salt molecules for the 'self adjusted mixture sampling calibration.
         if saltmax == None:
@@ -682,6 +684,7 @@ class Swapper(object):
             if self.nprop > 0:
                 context.setPositions(initial_positions)
                 context.setVelocities(initial_velocities)
+                context.setPeriodicBoxVectors(*initial_box_vectors)
 
     def _set_identity(self, mode, exchange_indices):
         """
