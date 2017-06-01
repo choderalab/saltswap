@@ -38,27 +38,38 @@ Example
 -------
 
 The OpenMM wrapper for Swapper is contained in the MCMCSampler class, which allows alternating steps of molecular
-dynamics and Swapper moves. To run Swapper without that wrapper, see below. It's assumed Swapper will be run on a
-PDB structure of a protein that is immersed in a box of pure water.
+dynamics and Swapper moves. To run Swapper without that wrapper, see below for an example using a box of water.
 
-# Load the structure and create the system
->>> pdb = app.PDBFile('protein_in_pure_water.pdb')
->>> forcefield = app.ForceField('amber99sbildn.xml', 'tip3p.xml')
->>> system = forcefield.createSystem(pdb.topology, nonbondedMethod=app.PME, nonbondedCutoff=1.0*unit.nanometers, constraints=app.HBonds, rigidWater=True)
->>> system.addForce(openmm.MonteCarloBarostat(pressure, temperature, 25))
-# To run _ncmc, you must use a compound integrator. It's expected the second integrator will be used for _ncmc
+>>> from simtk import openmm, unit
+>>> from openmmtools.testsystems import WaterBox
+>>> from openmmtools import integrators
+
+Create the system.
+>>> wbox = WaterBox()
+>>> wbox.system.addForce(openmm.MonteCarloBarostat(1.*unit.atmospheres, 300.*unit.kelvin))
+
+To perform NCMC, you must use a particular type of integrator that can accumulate the protocol work internally as well
+as a custom integrator.
+>>> equilibrium_integrator = integrators.LangevinIntegrator(temperature=300.*unit.kelvin)
+>>> ncmc_integrator = integrators.ExternalPerturbationLangevinIntegrator(temperature=300.*unit.kelvin)
 >>> compound_integrator = openmm.CompoundIntegrator()
->>> compound_integrator.addIntegrator(openmm.LangevinIntegrator(temperature, 1/unit.picosecond, 0.002*unit.picoseconds))
->>> compound_integrator.addIntegrator(GHMCIntegrator(temperature, 1/unit.picosecond, 0.001*unit.picoseconds, nsteps = 2))
->>> compound_integrator.setCurrentIntegrator(0)
-# Create the context and Swapper object. The _ncmc protocol will be 2000 perturbutations with 2 propagation steps per perturbation.
->>> context = openmm.Context(system, compound_integrator)
->>> context.setPositions(pdb.positions)
->>> salty = Swapper(system=system,topology=pdb.topology,temperature=temperature,delta_chem=0,integrator=compound_integrator,pressure=pressure, npert = 2000, nprop = 2)
-# Simulate with alternating steps of MD and Swapper
->>> for iteration in range(1000):
->>>     compound_integrator.step(10000)
->>>     salty.update(context,nattempts=100)
+>>> compound_integrator.addIntegrator(equilibrium_integrator)
+>>> compound_integrator.addIntegrator(ncmc_integrator)
+
+Create the context
+>>> context = openmm.Context(wbox.system, compound_integrator)
+>>> context.setPositions(wbox.positions)
+>>> context.setVelocitiesToTemperature(300.*unit.kelvin)
+
+Initialize the driver for performing salt-water exchanges
+>>> swapper = Swapper(system=wbox,topology=wbox.topology,temperature=300.*unit.kelvin, delta_chem=317.0,
+>>>...                ncmc_integrator=ncmc_integrator, pressure=1.*unit.atmospheres)
+
+To perform constant salt concentration molecular dynamics, iterate between equilibrium dynamics and salt interstions.
+For the purpose of this docstring the snippet below demonstrates a super short simulation.
+>>> for iteration in range(5):
+>>>...  compound_integrator.step(1)
+>>>...  swapper.update(context,nattempts=1)
 
 TODO
 ----
