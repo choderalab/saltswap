@@ -28,11 +28,10 @@ requirements:
     - openmm
     - openmmtools
     - netcdf4
-    - pytest
 
 test:
   requires:
-    - nose
+    - pytest
   imports:
     - saltswap
 

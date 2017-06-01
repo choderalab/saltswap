@@ -25,10 +25,10 @@ script:
   - conda install --yes --use-local ${PACKAGENAME}-dev
   # Install testing dependencies. Without specifying the numpy version, numpy
   # is downgraded to 1.9 and we get a "libgfortran not found" issue.
-  - conda install --yes --quiet nose nose-timer pymbar "numpy>=1.11"
+  #- conda install --yes --quiet nose nose-timer pymbar "numpy>=1.11"
+  - conda install --yes --quiet pytest pytest-cov
   # Test the package
-  # TODO: remove the IGNORE_EXCEPTION_DETAIL when we drop Python2 support
-  - cd devtools && nosetests $PACKAGENAME --nocapture --verbosity=2 --with-timer --with-doctest --doctest-options="+IGNORE_EXCEPTION_DETAIL" -a '!slow' && cd ..
+  - cd devtools && py.test --cov=${PACKAGENAME} --verbose -rxs --pyargs ${PACKAGENAME}  && cd ..
 
 env:
   matrix:

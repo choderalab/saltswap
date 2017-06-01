@@ -3,46 +3,53 @@ from openmmtools.testsystems import WaterBox
 import copy
 from saltswap.integrators import GHMCIntegrator as GHMC
 from openmmtools.integrators import GeodesicBAOABIntegrator
-from saltswap.integrators import NCMCGeodesicBAOAB, NCMCMetpropolizedGeodesicBAOAB
+from saltswap.integrators import NCMCGeodesicBAOAB
 import pytest
+import os
 
-def detect_cuda():
+def skip_cuda():
     """
     Detect whether CUDA is available to openmm on the platform where the test is being performed.
     This is used to determine whether to perform tests on platforms with CUDA.
 
     Return
     ------
-    hasCUDA : bool
+    skip : bool
       whether CUDA is accessible to openmm on the platform
 
     """
     try:
         openmm.Platform.getPlatformByName('CUDA')
-        noCUDA = False
+        skip = False
     except Exception:
-        noCUDA = True
+        skip = True
 
-    return noCUDA
+    return skip
 
-def detect_opencl():
+def skip_opencl():
     """
     Detect whether CUDA is available to openmm on the platform where the test is being performed.
     This is used to determine whether to perform tests on platforms with OpenCL.
 
     Return
     ------
-    hasCUDA : bool
-      whether CUDA is accessible to openmm on the platform
+    skip : bool
+      whether OpenCL is accessible to openmm on the platform
 
     """
     try:
         openmm.Platform.getPlatformByName('OpenCL')
-        noOpenCL = False
+        skip = False
     except Exception:
-        noOpenCL = True
+        skip = True
 
-    return noOpenCL
+    return skip
+
+def skip_travis():
+    """
+    Returns True if running on Travis. This allows slow tests to be avoided.
+    """
+    return os.environ.get("TRAVIS", None) == 'true'
 
 class TestIntegrators():
     """
@@ -208,7 +215,7 @@ class TestIntegrators():
         print(ext_work_getenergy, ext_work_integrator, int_work)
         assert ( abs(ext_work_getenergy - ext_work_integrator) < 0.01  and abs(ext_work_getenergy - int_work) < 0.01 )
 
-    @pytest.mark.skipif(detect_cuda(), reason="CUDA not detected on platform")
+    @pytest.mark.skipif(skip_cuda() or skip_travis(), reason="CUDA not detected on platform or running on travis")
     def test_ghmc_integrator_cuda(self):
         """
         Tests the GHMC integrator with an _ncmc procedure on a box of water. The protocol work is calculated inside the
@@ -269,7 +276,7 @@ class TestIntegrators():
         # All work calculations should agree.
         assert ( abs(ext_work_getenergy - ext_work_integrator) < 0.01  and abs(ext_work_getenergy - int_work) < 0.01 )
 
-    @pytest.mark.skipif(detect_cuda(), reason="OpenCL not detected on platform")
+    @pytest.mark.skipif(skip_opencl() or skip_travis(), reason="OpenCL not detected on platform or on Travis")
     def test_ghmc_integrator_opencl(self):
         """
         Tests the GHMC integrator with an _ncmc procedure on a box of water. The protocol work is calculated inside the
@@ -354,7 +361,7 @@ class TestIntegrators():
         integrator.addIntegrator(ncmc_gbaoab)
 
         # _ncmc parameters
-        npert = 50  # Number of perturbation steps
+        npert = 20  # Number of perturbation steps
 
         # Get thermal energy
         (kT, kT_unitless) = self._get_constants(temperature)
@@ -393,91 +400,91 @@ class TestIntegrators():
         # All work calculations should agree.
         assert abs(ext_work_getenergy - int_work) < 0.001
 
-        def test_multiple_ncmc_geodesic_baoab_cpu(self):
-            """
-            Ensure the protocol work that is calculated internally matches externall calculated work.
-            """
-            temperature = 298.0 * unit.kelvin
-            pressure = 1 * unit.atmospheres
+    def test_multiple_ncmc_geodesic_baoab_cpu(self):
+        """
+        Ensure the protocol work that is calculated internally matches externall calculated work.
+        """
+        temperature = 298.0 * unit.kelvin
+        pressure = 1 * unit.atmospheres
 
-            wbox = WaterBox(nonbondedMethod=openmm.app.CutoffPeriodic)
+        wbox = WaterBox(nonbondedMethod=openmm.app.CutoffPeriodic)
 
-            reference_system = wbox.system
-            system = copy.deepcopy(wbox.system)
-            reference_force = self._get_nonbonded_force(reference_system)
-            force = self._get_nonbonded_force(system)
+        reference_system = wbox.system
+        system = copy.deepcopy(wbox.system)
+        reference_force = self._get_nonbonded_force(reference_system)
+        force = self._get_nonbonded_force(system)
 
-            # Create the compound integrator with SaltSwap's integrators
-            gbaoab = GeodesicBAOABIntegrator(temperature=temperature, K_r=2, collision_rate=5.0 / unit.picosecond,
-                                             timestep=2.0 * unit.femtosecond)
-            ncmc_gbaoab = NCMCGeodesicBAOAB(temperature=temperature, collision_rate=5.0 / unit.picosecond,
-                                            timestep=1.0 * unit.femtosecond)
-            integrator = openmm.CompoundIntegrator()
-            integrator.addIntegrator(gbaoab)
-            integrator.addIntegrator(ncmc_gbaoab)
+        # Create the compound integrator with SaltSwap's integrators
+        gbaoab = GeodesicBAOABIntegrator(temperature=temperature, K_r=2, collision_rate=5.0 / unit.picosecond,
+                                         timestep=2.0 * unit.femtosecond)
+        ncmc_gbaoab = NCMCGeodesicBAOAB(temperature=temperature, collision_rate=5.0 / unit.picosecond,
+                                        timestep=1.0 * unit.femtosecond)
+        integrator = openmm.CompoundIntegrator()
+        integrator.addIntegrator(gbaoab)
+        integrator.addIntegrator(ncmc_gbaoab)
 
-            # _ncmc parameters
-            npert = 50  # Number of perturbation steps
+        # _ncmc parameters
+        npert = 20  # Number of perturbation steps
 
-            # Get thermal energy
-            (kT, kT_unitless) = self._get_constants(temperature)
+        # Get thermal energy
+        (kT, kT_unitless) = self._get_constants(temperature)
 
-            # Make the water box test system and return everything
+        # Make the water box test system and return everything
 
-            # Create the context
-            platform = openmm.Platform.getPlatformByName('CPU')
-            context = openmm.Context(system, integrator, platform)
-            context.setPositions(wbox.positions)
+        # Create the context
+        platform = openmm.Platform.getPlatformByName('CPU')
+        context = openmm.Context(system, integrator, platform)
+        context.setPositions(wbox.positions)
 
-            # Equilibration. Take a few steps of langevin dynamics to test the compound integrator
-            integrator.setCurrentIntegrator(0)
-            gbaoab.step(5)
+        # Equilibration. Take a few steps of langevin dynamics to test the compound integrator
+        integrator.setCurrentIntegrator(0)
+        gbaoab.step(5)
 
-            ext_work_getenergy = 0.0
+        ext_work_getenergy = 0.0
 
-            # NCMC. Accumalating the protocol inside the custom integrator and exertanlly with getEnergy()
-            integrator.setCurrentIntegrator(1)
+        # NCMC. Accumalating the protocol inside the custom integrator and exertanlly with getEnergy()
+        integrator.setCurrentIntegrator(1)
+        ncmc_gbaoab.step(1)
+        for stage in range(npert):
+            # Initial energy with getEnergy
+            initial_energy_getenergy = context.getState(getEnergy=True).getPotentialEnergy() / kT
+            # Perturbation
+            self._update_forces(stage, npert, force, reference_force)
+            force.updateParametersInContext(context)
+            # Accumulate work out side integrator.
+            final_energy_getenergy = context.getState(getEnergy=True).getPotentialEnergy() / kT
+            ext_work_getenergy += (final_energy_getenergy - initial_energy_getenergy)
+            # Propagation
             ncmc_gbaoab.step(1)
-            for stage in range(npert):
-                # Initial energy with getEnergy
-                initial_energy_getenergy = context.getState(getEnergy=True).getPotentialEnergy() / kT
-                # Perturbation
-                self._update_forces(stage, npert, force, reference_force)
-                force.updateParametersInContext(context)
-                # Accumulate work out side integrator.
-                final_energy_getenergy = context.getState(getEnergy=True).getPotentialEnergy() / kT
-                ext_work_getenergy += (final_energy_getenergy - initial_energy_getenergy)
-                # Propagation
-                ncmc_gbaoab.step(1)
 
-            # Run normal MD again
-            integrator.setCurrentIntegrator(0)
-            gbaoab.step(5)
+        # Run normal MD again
+        integrator.setCurrentIntegrator(0)
+        gbaoab.step(5)
 
-            # NCMC. Accumalating the protocol inside the custom integrator and exertanlly with getEnergy()
-            ext_work_getenergy = 0.0  # Externally-accumulated unitless work calculated using getEnergy()
-            # The third work term is accumulated inside the integrator.
+        # NCMC. Accumalating the protocol inside the custom integrator and exertanlly with getEnergy()
+        ext_work_getenergy = 0.0  # Externally-accumulated unitless work calculated using getEnergy()
+        # The third work term is accumulated inside the integrator.
 
-            # Reset the internal work calculator
-            ncmc_gbaoab.setGlobalVariableByName("first_step", 0)
-            ncmc_gbaoab.setGlobalVariableByName("protocol_work", 0)
+        # Reset the internal work calculator
+        ncmc_gbaoab.setGlobalVariableByName("first_step", 0)
+        ncmc_gbaoab.setGlobalVariableByName("protocol_work", 0)
 
-            # Steps are taken with GHMC, again making use of the compound integrator
-            integrator.setCurrentIntegrator(1)
+        # Steps are taken with GHMC, again making use of the compound integrator
+        integrator.setCurrentIntegrator(1)
+        ncmc_gbaoab.step(1)
+        for stage in range(npert):
+            # Initial energy with getEnergy
+            initial_energy_getenergy = context.getState(getEnergy=True).getPotentialEnergy() / kT
+            # Perturbation
+            self._update_forces(stage, npert, force, reference_force)
+            force.updateParametersInContext(context)
+            # Accumulate work out side integrator.
+            final_energy_getenergy = context.getState(getEnergy=True).getPotentialEnergy() / kT
+            ext_work_getenergy += (final_energy_getenergy - initial_energy_getenergy)
+            # Propagation
             ncmc_gbaoab.step(1)
-            for stage in range(npert):
-                # Initial energy with getEnergy
-                initial_energy_getenergy = context.getState(getEnergy=True).getPotentialEnergy() / kT
-                # Perturbation
-                self._update_forces(stage, npert, force, reference_force)
-                force.updateParametersInContext(context)
-                # Accumulate work out side integrator.
-                final_energy_getenergy = context.getState(getEnergy=True).getPotentialEnergy() / kT
-                ext_work_getenergy += (final_energy_getenergy - initial_energy_getenergy)
-                # Propagation
-                ncmc_gbaoab.step(1)
 
-            # The work calculated internally by the integrator
-            int_work = ncmc_gbaoab.getGlobalVariableByName('protocol_work') / kT_unitless
-            # All work calculations should agree.
-            assert abs(ext_work_getenergy - int_work) < 0.001
+        # The work calculated internally by the integrator
+        int_work = ncmc_gbaoab.getGlobalVariableByName('protocol_work') / kT_unitless
+        # All work calculations should agree.
+        assert abs(ext_work_getenergy - int_work) < 0.001
