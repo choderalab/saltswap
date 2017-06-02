@@ -3,7 +3,14 @@ from simtk import openmm, unit
 from simtk.openmm import app
 from openmmtools.testsystems import WaterBox
 from saltswap.mcmc_samplers import MCMCSampler
+import pytest
+import os
 
+def skip_travis():
+    """
+    Returns True if running on Travis. This allows slow tests to be avoided.
+    """
+    return os.environ.get("TRAVIS", None) == 'true'
 
 class TestZeroEnergySwaps(object):
     """
@@ -20,6 +27,7 @@ class TestZeroEnergySwaps(object):
     temperature. (The factor of 1/2 in the exponent comes from the fact that two water molecules are exchanged for
     two ions.)
     """
+    @pytest.mark.skipif(skip_travis(), reason="Skipping test on travis because the test is slow.")
     def test_ideal_swaps_instant(self, Dmu=0, size =15.0 * unit.angstrom, Nsamps=50):
         """
         Box of water test for zero energy swap for instantaneous insertions and deletions.
@@ -57,6 +65,7 @@ class TestZeroEnergySwaps(object):
         # Increasing standard error by a factor 2.5, as correlations between samples underestimate the error
         assert (ratio_mean < target + 2.5 * ratio_std_error) and (ratio_mean > target - 2.5 * ratio_std_error)
 
+    @pytest.mark.skipif(skip_travis(), reason="Skipping test on travis because the test is slow.")
     def test_ideal_swaps_GHMC(self, Dmu=0, size =15.0 * unit.angstrom, Nsamps=50):
         """
         Box of water test for zero energy swap for _ncmc insertions and deletions using a GHMC integrator.

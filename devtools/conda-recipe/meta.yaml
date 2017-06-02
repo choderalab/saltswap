@@ -1,0 +1,40 @@
+package:
+  name: saltswap-dev
+  version: 0.0.0
+
+source:
+  path: ../../
+
+build:
+  preserve_egg_dir: True
+  number: 0
+
+requirements:
+  build:
+    - python
+    - cython
+    - numpy
+    - setuptools
+    - openmm
+    - openmmtools
+    - netcdf4
+    - pytest
+
+  run:
+    - python
+    - cython
+    - numpy
+    - setuptools
+    - openmm
+    - openmmtools
+    - netcdf4
+
+test:
+  requires:
+    - pytest
+  imports:
+    - saltswap
+
+about:
+  home: https://github.com/choderalab/saltswap
+  license: MIT License
