@@ -74,22 +74,22 @@ class Salinator(object):
 
         # Thermodynamic constraint
         self.salt_concentration = salt_concentration
+        self.chemical_potential = self._get_chemical_potential(salt_concentration)
 
         # MCMC and NCMC parameters
         self.npert = npert
 
         # Initialize the driver for exchanging salt and water
-        chemical_potential = self._get_chemical_potential()
         self.swapper = Swapper(system=self.system, topology=topology, temperature=temperature,
-                               delta_chem=chemical_potential, ncmc_integrator=ncmc_integrator, pressure=pressure,
+                               delta_chem=self.chemical_potential, ncmc_integrator=ncmc_integrator, pressure=pressure,
                                nattempts_per_update=1, npert=self.npert, nprop=0,  work_measurement='internal',
                                waterName=water_name, cationName=cation_name, anionName=anion_name)
 
-    def _get_chemical_potential(self):
+    def _get_chemical_potential(self, salt_concentration):
         """
         Extract the required chemical potential from the specified macroscopic salt concentration.
         """
-        #TODO: this functionality needs to be added.
+        #TODO: this functionality needs to be added. Make a static method?
         return 0.0
 
     def _get_nonbonded_force(self):
@@ -130,15 +130,26 @@ class Salinator(object):
             total_charge += nonbonded_force.getParticleParameters(i)[0].value_in_unit(unit.elementary_charge)
         return int(np.floor(0.5 + total_charge))
 
-    def _add_cation(self, water_index, nonbonded_force):
+    def _add_ion(self, ion_type, water_index, nonbonded_force):
         """
-        Insert a cation and update the system.
-        :param water_index:
-        :param nonbonded_force:
-        :return:
+        Swap a water molecule, specified by its index, for either a cation or anion.
+
+        Parameters
+        ----------
+        ion_type: str
+        water_index: int
+        nonbonded_force: simtk.openmm.openmm.NonbondedForce
         """
         stage = self.npert
-        parameter_path = self.swapper.wat2cat_parampath
+
+        if ion_type == 'cation':
+            parameter_path = self.swapper.wat2cat_parampath
+            self.swapper.stateVector[water_index] = 1        # Update state vector, which indexes cations with 1.
+        elif ion_type == 'anion':
+            parameter_path = self.swapper.wat2an_parampath
+            self.swapper.stateVector[water_index] = 2        # Update state vector, which indexes anions with 2
+
+        # Get the residue that will be turned into an ion
         molecule = [atom for atom in self.swapper.mutable_residues[water_index].atoms()]
 
         # Change the water parameters to be that of the cations
@@ -152,34 +163,6 @@ class Salinator(object):
 
         # Push these new parameters to the context
         nonbonded_force.updateParametersInContext(self.context)
-
-        # Update state vector, which indexes cations with 1.
-        self.swapper.stateVector[water_index] = 1
-
-    def _add_anion(self, water_index, nonbonded_force):
-        """
-        Insert an anion and update the system.
-        :param water_index:
-        :param nonbonded_force:
-        :return:
-        """
-        stage = self.npert
-        parameter_path = self.swapper.wat2an_parampath
-        molecule = [atom for atom in self.swapper.mutable_residues[water_index].atoms()]
-
-        # Change the water parameters to be that of the cations
-        atom_index = 0
-        for atom in molecule:
-            nonbonded_force.setParticleParameters(atom.index, charge=parameter_path[atom_index]['charge'][stage],
-                                                              sigma=parameter_path[atom_index]['sigma'][stage],
-                                                              epsilon=parameter_path[atom_index]['epsilon'][stage])
-            atom_index += 1
-
-        # Push these new parameters to the context
-        nonbonded_force.updateParametersInContext(self.context)
-
-        # Update state vector, which indexes anions with 2.
-        self.swapper.stateVector[water_index] = 2
 
     def neutralize(self):
         """
@@ -197,10 +180,10 @@ class Salinator(object):
             # Change the selected waters into Na+ or Cl- depending on the total charge.
             if total_charge < 0:
                 for water_index in water_indices:
-                    self._add_cation(water_index, nonbonded_force)
+                    self._add_ion('cation', water_index, nonbonded_force)
             else:
                 for water_index in water_indices:
-                    self._add_anion(water_index, nonbonded_force)
+                    self._add_ion('anion', water_index, nonbonded_force)
 
     def insert_to_concentration(self):
         """
@@ -209,25 +192,27 @@ class Salinator(object):
         """
 
         # Estimate how many salt should be added TODO: use the actual concentration for the appropriate model?
-        water_conc = 55.4 # Approximate concentration of the water model
+        water_conc = 55.4 # Approximate concentration of water
         nwaters = np.sum(self.swapper.stateVector == 0)
         nsalt = int(np.floor(nwaters * self.salt_concentration / (water_conc * unit.molar)))
 
         # Select which water molecules will be converted TODO: Can I ensure salt isn't added inside the protein?
-        water_indices = np.random.choice(a=np.where(self.swapper.stateVector == 0)[0], size=nsalt, replace=False)
+        water_indices = np.random.choice(a=np.where(self.swapper.stateVector == 0)[0], size=2*nsalt, replace=False)
 
         # Insert the salt!
         nonbonded_force = self._get_nonbonded_force()
-        for water_index in water_indices:
-            self._add_cation(water_index, nonbonded_force)
-            self._add_cation(water_index, nonbonded_force)
+        for i in range(2*nsalt - 1):
+            self._add_ion('cation', water_indices[i], nonbonded_force)
+            self._add_ion('anion', water_indices[i+1], nonbonded_force)
 
-    def update(self):
+    def update(self, nattempts=None, chemical_potential=None, saltmax=None):
         """
-        Perform an MCMC salt insertion/deletion move.
-        :return:
+        Perform MCMC salt insertion/deletion moves.
         """
-        pass
+        if chemical_potential is None:
+            cost = self.chemical_potential
+
+        self.swapper.update(self.context, nattempts=nattempts, cost=cost, saltmax=saltmax)
 
 class MCMCSampler(object):
     """
