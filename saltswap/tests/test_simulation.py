@@ -88,6 +88,9 @@ class TestSalinator(object):
         """
         integrator, context, salinator = self._create_protein_system()
 
+        # Neutralize
+        salinator.neutralize()
+
         # Get the initial number of salt
         initial_nsalt = np.sum(salinator.swapper.stateVector == 1)
 
@@ -99,6 +102,10 @@ class TestSalinator(object):
 
         assert final_nsalt > initial_nsalt
 
+        # Ensure that the system remains neutral.
+        nonbonded_force = salinator._get_nonbonded_force()
+        final_charge = salinator._get_system_charge(nonbonded_force)
+        assert final_charge == 0
 
 class TestWaterBoxSimulation(object):
     """
