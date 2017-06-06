@@ -6,6 +6,8 @@ from saltswap import swapper, wrappers
 from openmmtools import integrators as open_integrators
 from saltswap.integrators import GHMCIntegrator
 
+
+
 class TestSalinator(object):
     """
     Tests the functionality of wrapper for the MCMC addition and deletion of salt.
@@ -49,11 +51,80 @@ class TestSalinator(object):
 
         return integrator, context, salinator
 
-    def test_initialization(self):
+    def _create_waterbox(self, model='tip4pew'):
+        """
+        Creates a DHFR system to re-use in tests.
+        """
+        # System parameters
+        temperature = 300. * unit.kelvin
+        timestep = 2. * unit.femtoseconds
+        collision_rate = 90. / unit.picoseconds
+        pressure = 1. * unit.atmospheres
+        npert = 10
+        salt_concentration = 0.2 * unit.molar
+
+        # Make the water box test system with a fixed pressure
+        # Make the water box test system with a fixed pressure
+        box = WaterBox(nonbondedMethod=openmm.app.CutoffPeriodic, model=model)
+        box.system.addForce(openmm.MonteCarloBarostat(pressure, temperature))
+
+
+        # Create the compound integrator with SaltSwap's custom GHMC integrator
+        langevin = open_integrators.LangevinIntegrator(splitting="V R O R V", temperature=temperature,
+                                                       timestep=timestep, collision_rate=collision_rate)
+        ncmc_langevin = open_integrators.ExternalPerturbationLangevinIntegrator(splitting="V R O R V",
+                                                                                temperature=temperature,
+                                                                                timestep=timestep,
+                                                                                collision_rate=collision_rate)
+        integrator = openmm.CompoundIntegrator()
+        integrator.addIntegrator(langevin)
+        integrator.addIntegrator(ncmc_langevin)
+
+        # Create context
+        platform = openmm.Platform.getPlatformByName('CPU')
+        context = openmm.Context(box.system, integrator, platform)
+        context.setPositions(box.positions)
+
+        salinator = wrappers.Salinator(context=context, system=box.system, topology=box.topology,
+                                       ncmc_integrator=ncmc_langevin, salt_concentration=salt_concentration,
+                                       pressure=pressure, temperature=temperature, npert=npert, water_name='HOH')
+
+        return integrator, context, salinator
+
+    def test_protein_initialization(self):
         """
         Test the initialization of the salinator
         """
         integrator, context, salinator = self._create_protein_system()
+
+    def test_waterbox_initialization(self):
+        """
+        Implicitly tests the identification of tip3p and tip4p water models, as exceptions are thrown if the water
+        model is not recognized during the class initialization.
+        """
+        integrator, context, salinator = self._create_waterbox(model='tip4pew')
+        integrator, context, salinator = self._create_waterbox(model='tip3p')
+
+    def test_invert_concentration(self):
+        """
+        Make sure that when calculating the chemical potential from the concentration, the step that involves inverting
+        the chemical potential-->concentration is correctly performed.
+        """
+        integrator, context, salinator = self._create_waterbox(model='tip4pew')
+
+        # Get the default weights for tip4pew water
+        weights = wrappers.default_tip4pew_weights
+        fn = weights['fn']
+        volume = weights['volume']
+
+        # Get the concentration for a specified chemical potential
+        delta_chem = 315.0
+        predicted_concentration = salinator._predict_concentration(delta_chem, fn, volume)
+
+        # Get the chemical potential from the concentration
+        predicted_delta_chem = salinator._invert_concentration(predicted_concentration, fn, volume)
+
+        assert abs(predicted_delta_chem - delta_chem) < 1E-6
 
     def test_charge_calculation(self):
         """
@@ -86,7 +157,7 @@ class TestSalinator(object):
         """
         Test to make sure salt gets added when an initial guess of the number is made.
         """
-        integrator, context, salinator = self._create_protein_system()
+        integrator, context, salinator = self._create_waterbox()
 
         # Neutralize
         salinator.neutralize()
