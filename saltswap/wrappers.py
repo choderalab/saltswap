@@ -40,57 +40,180 @@ from saltswap.swapper import Swapper
 import simtk.openmm as openmm
 import simtk.unit as unit
 from openmmtools import integrators as open_integrators
-
+from scipy import optimize
 from saltswap.integrators import GHMCIntegrator
 
 
+# The parameters required to determine the chemical potential from concentration. These parameters have been calculated
+# from self-adjusted mixture sampling simulations using PME with a 10 Angstrom cutoff, Ewald tolerance of 1E-4, and a
+# switch width of 1.5 Angstroms.
+default_tip4pew_weights = {'fn':np.array([ 0., -318.02312532, -634.90809654, -950.74578027, -1266.27103839,
+                                           -1581.38318526, -1896.34568864, -2210.77776154, -2525.0550286,
+                                           -2839.12924175, -3153.02481357, -3466.68052032, -3780.49884212,
+                                           -4094.0576715, -4407.4606291 , -4720.89693865, -5034.03848188,
+                                           -5346.98186477, -5660.10721546, -5973.00551306, -6285.65777448]),
+                           'volume':np.array([26.65267978, 26.57112124, 26.50371498, 26.41689722, 26.35040751,
+                                             26.28338648, 26.20945854, 26.1474357 , 26.07480588, 26.00300707,
+                                             25.93514985, 25.87364533, 25.81137662, 25.74550946, 25.68789879,
+                                             25.61304901, 25.55691636, 25.49593746, 25.42924935, 25.37536792,
+                                              25.3079591])}
+default_tip3p_weights = {'fn':np.array([0., -320.03292132, -638.69174344, -956.55600114, -1273.88697038, -1590.77832955,
+                                        -1907.46929657, -2223.79014252, -2539.73095265, -2855.51349456, -3171.15183542,
+                                        -3486.63899421, -3801.8856171 , -4117.04030733, -4432.24835394, -4747.33615489,
+                                        -5062.26928236, -5377.151068  , -5691.73414011, -6006.27264767,
+                                        -6320.76906322]),
+                         'volume':np.array([26.95692854, 26.88854455, 26.81861493, 26.75631525, 26.68304869,
+                                            26.62441529, 26.55923851, 26.50940181, 26.44217547, 26.38498465, 26.3304819,
+                                            26.2684076, 26.20687082, 26.15909901, 26.1107472 , 26.06642252, 26.00498962,
+                                            25.93755518, 25.8777354 , 25.81917845, 25.75393419])}
+
 class Salinator(object):
     """
-    A usuable wrapper for performing constant-salt-concentration simulations
+    A wrapper for performing constant-salt-concentration simulations using the saltswap machinery.
     """
 
     def __init__(self, context, system, topology, ncmc_integrator, salt_concentration, pressure, temperature, npert,
-                 water_name="HOH", cation_name='Na+', anion_name='Cl-'):
+                 water_name="HOH", cation_name='Na+', anion_name='Cl-', calibration_weights=None):
 
         """
         Parameters
         ----------
         context: simtk.openmm.openmm.Context
-        system: simtk.openmm.System
-        topology: simtk.openmm.app.topology
-        ncmc_integrator: simtk.openmm.integrator
-        salt_concentration: simtk.unit
-        pressure: simtk.unit
-        temperature: simtk.unit
-        npert: int
-        water_name: str
-        cation_name: str
-        anion_name: str
+            The simulation context
+        system : simtk.openmm.System
+            System to be titrated, containing all possible protonation sites.
+        topology : simtk.openmm.app.topology
+             Topology of the system
+        temperature : simtk.unit.Quantity compatible with kelvin
+            Temperature to be simulated.
+        ncmc_integrator : simtk.openmm.integrator
+            The integrator used for NCMC propagation of insertion and deletions
+        salt_concentration: simtk.unit.quantity.Quantity
+            The macroscopic salt concentration that the simulation will be coupled to.
+        pressure : simtk.unit.Quantity compatible with atmospheres, optional, default=None
+            For explicit solvent simulations, the pressure.
+        npert : int
+            Number of ncmc perturbation kernels. Set to 1 for instantaneous switching
+        water_name = str, optional, default='HOH'
+            Name of water residue that will be exchanged with salt
+        cation_name : str, optional, default='Na+'
+            Name of cation residue from which parameters are to be taken.
+        anion_name : str, optional, default='Cl-'
+            Name of anion residue from which parameters are to be taken.
+        calibration_weights: dict
+            Dictionary containing the salt insertion free energies and volumes from the calibration of the chemical
+            potential.
         """
-        # TODO: read in water model?
         # OpenMM system objects
         self.context = context
         self.system = system
-
-        # Thermodynamic constraint
-        self.salt_concentration = salt_concentration
-        self.chemical_potential = self._get_chemical_potential(salt_concentration)
 
         # MCMC and NCMC parameters
         self.npert = npert
 
         # Initialize the driver for exchanging salt and water
         self.swapper = Swapper(system=self.system, topology=topology, temperature=temperature,
-                               delta_chem=self.chemical_potential, ncmc_integrator=ncmc_integrator, pressure=pressure,
+                               delta_chem=0.0, ncmc_integrator=ncmc_integrator, pressure=pressure,
                                nattempts_per_update=1, npert=self.npert, nprop=0,  work_measurement='internal',
                                waterName=water_name, cationName=cation_name, anionName=anion_name)
 
-    def _get_chemical_potential(self, salt_concentration):
+        # Constant salt parameters
+        self.salt_concentration = salt_concentration
+        self.chemical_potential = self._get_chemical_potential(calibration_weights)
+        self.swapper.delta_chem = self.chemical_potential
+
+    def _get_chemical_potential(self, calibration_weights):
         """
         Extract the required chemical potential from the specified macroscopic salt concentration.
         """
-        #TODO: this functionality needs to be added. Make a static method?
-        return 0.0
+        if calibration_weights is not None:
+            volume = calibration_weights['volume']
+            fn = calibration_weights['fn']
+        else:
+            # Guess the chemical potential of water
+            # TODO: raise warning that certain non-bonded interaction parameters are expected?
+            water_params = self.swapper.water_parameters
+            if len(water_params) == 3:
+                if water_params[0]['charge'] + 0.834 == 0.0:
+                    # Assume TIP3P at default simulation parameters
+                    volume = default_tip3p_weights['volume']
+                    fn = default_tip3p_weights['fn']
+                else:
+                    raise Exception('Default parameters not available for three-site water model.')
+            elif len(water_params) == 4:
+                if water_params[3]['charge'] + 1.04844 == 0.0:
+                    # Assume TIP4Pew at default simulation parameters
+                    volume = default_tip4pew_weights['volume']
+                    fn = default_tip4pew_weights['fn']
+                else:
+                    raise Exception('Default parameters not available for four-site water model.')
+
+        delta_chem  = self._invert_concentration(self.salt_concentration, fn, volume)
+
+        return delta_chem
+
+    def _predict_concentration(self, delta_chem, fn, volume):
+        """
+        Calculate the average concentration of salt (in M) at a given chemical potential.
+
+        Parameters
+        ----------
+        delta_chem: float
+            The difference between the chemical potential of two water molecules and anion and cation (in kT).
+        fn: numpy.ndarray
+            The free energy exchange salt and two water molecules (in kT).
+        volume: numpu.ndarray
+            The mean volume (in nm**3) as a function of the number of salt pairs.
+
+        Returns
+        -------
+        concentration: float
+            The mean concentration (in mols/litre) of salt that occurs with the supplied parameters.
+
+        """
+        nsalt = np.arange(0, len(fn))
+        exponents = -delta_chem * nsalt - fn
+        a = np.max(exponents)
+        numerator = np.sum(nsalt * np.exp(exponents - a))
+        denominator = np.sum(volume * np.exp(exponents - a))
+        concentration = numerator/denominator * 1.66054
+
+        return float(concentration)
+
+    def _invert_concentration(self, concentration, fn, volume, initial_guess=318):
+        """
+        Extract the chemical potential required to achieve the specified macroscopic salt concentration. Numerically
+        inverts the _predict_concetration function.
+
+        Parameters
+        ----------
+        concentration: simtk.unit.quantity.Quantity or float
+            The desired macroscopic salt concentration. If float, assume units are in mols/litre.
+        fn: numpy.ndarray
+            The free energy exchange salt and two water molecules (in kT).
+        volume: numpu.ndarray
+            The mean volume (in nm**3) as a function of the number of salt pairs.
+        initial_guess: float
+            The initial guess of the required chemical potential
+
+        Returns
+        -------
+        delta_chem: float
+            The chemical potential required to achieve the desierd macroscopic salt concentration in saltswap\
+        """
+        if type(concentration) == unit.quantity.Quantity:
+            c = concentration.in_units_of(unit.molar)._value
+        elif type(concentration) == float or type(concentration) == int:
+            # Assume units are in molar (mols/litre)
+            c = float(concentration)
+        else:
+            raise Exception('Cannot recognize the type of concentration: "{0}"'.format(type(concentration)))
+
+        def loss(mu):
+            return (c - self._predict_concentration(mu, fn, volume)) ** 2
+
+        delta_chem = optimize.minimize(loss, initial_guess, method='BFGS', options={'gtol': 1e-07}).x[0]
+        return delta_chem
 
     def _get_nonbonded_force(self):
         """
@@ -215,7 +338,9 @@ class Salinator(object):
         if chemical_potential is None:
             cost = self.chemical_potential
 
-        self.swapper.update(self.context, nattempts=nattempts, cost=cost, saltmax=saltmax)
+        for attempt in nattempts:
+            self.attempt_identity_swap(self.context, cost, saltmax=None)
+
 
 class MCMCSampler(object):
     """
