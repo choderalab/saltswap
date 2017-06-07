@@ -6,33 +6,11 @@
 
 Description
 -----------
+A set of tools to simplify the application constant salt-concentration molecular dynamics simulations.
 
-Objects to sample moves from Swapper and molecular dynamics. Includes an MCMC sampler class inspired by choderalab/openmmmcmc.
-Includes a basic sampler for adjusted mixture sampling for the Swapper class.
-
-Notes
------
-
-The is development.
-
-References
-----------
-
-[1] Tan Z., Optimally adjusted mixture sampling and locally weighted histogram analysis, Journal of Computational and Graphical Statistics (17 November 2015)
-
-Example
---------
-
-from openmmtools.testsystems import WaterBox
-wbox = WaterBox(box_edge=20,nonbondedMethod=app.PME)
-sampler = MCMCSampler(wbox.system,wbox.topology,wbox.positions,delta_chem=710)
-sampler.multimove(1000)
-
-Copyright and license
----------------------
-
-@author Gregory A. Ross <gregory.ross@choderalab.org>
-
+Authors
+-------
+Gregory A. Ross
 """
 
 import numpy as np
@@ -69,11 +47,60 @@ default_tip3p_weights = {'fn':np.array([0., -320.03292132, -638.69174344, -956.5
 
 class Salinator(object):
     """
-    A wrapper for performing constant-salt-concentration simulations using the saltswap machinery.
+    A user-friendly wrapper for performing constant-salt-concentration simulations using the saltswap machinery.
+    Use this object to neutralize a system with the saltswap-specific ion topologies, initialize the ion concentration,
+    and perform the NCMC accelerated insertiona and deletion of salt.
+
+    Example
+    -------
+    A constant-salt concentration simulation on the tip3p DHFR test system.
+    >>> from simtk import openmm, unit
+    >>> from openmmtools import testsystems
+    >>> from openmmtools import integrators
+
+    Set the thermondynamic parameters
+    >>> temperature = 300.0 * unit.kelvin
+    >>> pressure = 1.0 * unit.atmospheres
+    >>> salt_concentration = 0.2 * unit.molar
+
+    Extract the test system:
+    >>> testobj = getattr(testsystems, 'DHFRExplicit')
+    >>> testsys = testobj(nonbondedMethod=openmm.app.PME, cutoff=10 * unit.angstrom, ewaldErrorTolerance=1E-4,
+    >>> ...               switch_width=1.5 * unit.angstrom)
+    >>> testsys.system.addForce(openmm.MonteCarloBarostat(pressure, temperature))
+
+    Create the compound integrator to perform molecular dynamics and the NCMC propagation. The choice of the Langevin
+    splitting is important here, as 'V R O R V' ensures low configuration space error for the unmetropolized dynamics.
+    >>> langevin = integrators.LangevinIntegrator(splitting='V R O R V', temperature=temperature,
+    >>> ...                                       measure_shadow_work=False, measure_heat=False)
+    >>> ncmc_langevin = integrators.ExternalPerturbationLangevinIntegrator(splitting='V R O R V',
+    >>> ...                              temperature=temperature, measure_shadow_work=False, measure_heat=False)
+    >>> integrator = openmm.CompoundIntegrator()
+    >>> integrator.addIntegrator(langevin)
+    >>> integrator.addIntegrator(ncmc_langevin)
+
+    Create the context:
+    >>> context = openmm.Context(testsys.system, integrator)
+    >>> context.setPositions(testsys.positions)
+    >>> context.setVelocitiesToTemperature(temperature)
+
+    Create the salinator:
+    >>> salinator = Salinator(context=context, system=testsys.system, topology=testsys.topology,
+    >>> ...                            ncmc_integrator=ncmc_langevin, salt_concentration=salt_concentration,
+    >>> ...                            pressure=pressure, temperature=temperature, water_name='WAT')
+
+    Neutralize the system and initialize the number of salt pairs near to the expected amount.
+    >>> salinator.neutralize()
+    >>> salinator.initialize_concentration()
+
+    Runing a short simulation by mixing MD and MCMC saltswap moves.
+    >>> for i in range(100):
+    >>> ...     langevin.step(2000)
+    >>> ...     salinator.update(nattempts=1)
     """
 
-    def __init__(self, context, system, topology, ncmc_integrator, salt_concentration, pressure, temperature, npert,
-                 water_name="HOH", cation_name='Na+', anion_name='Cl-', calibration_weights=None):
+    def __init__(self, context, system, topology, ncmc_integrator, salt_concentration, pressure, temperature,
+                 npert=10000, water_name="HOH", cation_name='Na+', anion_name='Cl-', calibration_weights=None):
 
         """
         Parameters
@@ -110,11 +137,21 @@ class Salinator(object):
 
         # MCMC and NCMC parameters
         self.npert = npert
+        # NCMC will not be performed for 1 perturbation.
+        if self.npert > 1:
+            # Number of propagation steps per perturbation.
+            # nprop > 1 only suported for saltswap.integrators.GHMCIntegrator.
+            nprop = 1
+        elif self.npert == 1:
+            # No propagation steps per perturbation, which mean no NCMC, ansd instantaneous insertion/deletion attempts.
+            nprop = 0
+        else:
+            raise Exception('Invalid number of perturbation steps specified. Must be at least 1.')
 
-        # Initialize the driver for exchanging salt and water
+        # Initialize the driver for exchanging salt and water. Setting delta_chem to 0.0 for now. Updated below:
         self.swapper = Swapper(system=self.system, topology=topology, temperature=temperature,
                                delta_chem=0.0, ncmc_integrator=ncmc_integrator, pressure=pressure,
-                               nattempts_per_update=1, npert=self.npert, nprop=0,  work_measurement='internal',
+                               nattempts_per_update=1, npert=self.npert, nprop=nprop, work_measurement='internal',
                                waterName=water_name, cationName=cation_name, anionName=anion_name)
 
         # Constant salt parameters
@@ -148,11 +185,12 @@ class Salinator(object):
                 else:
                     raise Exception('Default parameters not available for four-site water model.')
 
-        delta_chem  = self._invert_concentration(self.salt_concentration, fn, volume)
+        delta_chem = self.invert_concentration(self.salt_concentration, fn, volume)
 
         return delta_chem
 
-    def _predict_concentration(self, delta_chem, fn, volume):
+    @staticmethod
+    def predict_concentration(delta_chem, fn, volume):
         """
         Calculate the average concentration of salt (in M) at a given chemical potential.
 
@@ -180,10 +218,11 @@ class Salinator(object):
 
         return float(concentration)
 
-    def _invert_concentration(self, concentration, fn, volume, initial_guess=318):
+    @staticmethod
+    def invert_concentration(concentration, fn, volume, initial_guess=318):
         """
         Extract the chemical potential required to achieve the specified macroscopic salt concentration. Numerically
-        inverts the _predict_concetration function.
+        inverts the predict_concentration function.
 
         Parameters
         ----------
@@ -210,10 +249,11 @@ class Salinator(object):
             raise Exception('Cannot recognize the type of concentration: "{0}"'.format(type(concentration)))
 
         def loss(mu):
-            return (c - self._predict_concentration(mu, fn, volume)) ** 2
+            return (c - Salinator.predict_concentration(mu, fn, volume)) ** 2
 
         delta_chem = optimize.minimize(loss, initial_guess, method='BFGS', options={'gtol': 1e-07}).x[0]
-        return delta_chem
+
+        return float(delta_chem)
 
     def _get_nonbonded_force(self):
         """
@@ -308,7 +348,7 @@ class Salinator(object):
                 for water_index in water_indices:
                     self._add_ion('anion', water_index, nonbonded_force)
 
-    def insert_to_concentration(self):
+    def initialize_concentration(self):
         """
         Instantaneously insert salt pairs to approximately match the input concentration. This is will be the starting
         number for the MCMC salt insertion and deletion. These ions are added on top of the neutralizing ions.
@@ -335,23 +375,29 @@ class Salinator(object):
         """
         Perform MCMC salt insertion/deletion moves.
         """
-        if chemical_potential is None:
-            cost = self.chemical_potential
-
-        for attempt in nattempts:
-            self.attempt_identity_swap(self.context, cost, saltmax=None)
+        self.swapper.update(self.context, nattempts=nattempts, cost=chemical_potential, saltmax=saltmax)
 
 
 class MCMCSampler(object):
     """
-    Basics for molecular dynamics and saltswap swapper moves.
+    Simplified wrapper for mixing molecular dynamics and MCMC saltswap moves. Greatly simplifies the setup procedure,
+    at the expense of flexibility and generality.
+
+    Example
+    --------
+    Mix MD and MCMC saltswap moves on a box of water.
+    >>> from openmmtools.testsystems import WaterBox
+    >>> wbox = WaterBox(box_edge=20,nonbondedMethod=app.PME)
+    >>> sampler = MCMCSampler(wbox.system,wbox.topology,wbox.positions,delta_chem=710)
+    >>> sampler.multimove(1000)
+
     """
     def __init__(self, system, topology, positions, temperature=300 * unit.kelvin, pressure=1 * unit.atmospheres,
                  delta_chem=0, mdsteps=2000, saltsteps=0, volsteps=25, saltmax=None, platform='CPU', npert=1, nprop=0,
                  timestep=1.5 * unit.femtoseconds, propagator='Langevin', waterName='HOH', cationName='Na+',
                  anionName='Cl-'):
         """
-        Initialize a Monte Carlo titration driver for semi-grand ensemble simulation.
+        Initialize the MCMC sampler for MD and saltswap MCMC moves. Context creation is handled under the hood.
 
         Parameters
         ----------
@@ -550,13 +596,16 @@ class MCMCSampler(object):
 
 class SaltSAMS(MCMCSampler):
     """
+    DEPRICATED
+    TODO: remove and replace with machinery from the BAMS repo.
+
     Implementation of self-adjusted mixture sampling for exchanging water and salts in a grand canonical methodology. The
     mixture is over integer increments of the number of salt molecules up to a specified maximum. The targed density is
     currently hard coded in as uniform over the number of salt molecules.
 
     References
     ----------
-    .. [1] Z. Tan, Optimally adjusted mixture sampling and locally weighted histogram analysis
+    [1] Z. Tan, Optimally adjusted mixture sampling and locally weighted histogram analysis
         DOI: 10.1080/10618600.2015.111397
     """
 

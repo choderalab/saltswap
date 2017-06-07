@@ -13,7 +13,7 @@ class TestSalinator(object):
     Tests the functionality of wrapper for the MCMC addition and deletion of salt.
     """
 
-    def _create_protein_system(self):
+    def _create_protein_system(self, npert=10):
         """
         Creates a DHFR system to re-use in tests.
         """
@@ -22,7 +22,6 @@ class TestSalinator(object):
         timestep = 2. * unit.femtoseconds
         collision_rate = 90. / unit.picoseconds
         pressure = 1. * unit.atmospheres
-        npert = 10
         salt_concentration = 0.2 * unit.molar
 
         # Make the water box test system with a fixed pressure
@@ -51,7 +50,7 @@ class TestSalinator(object):
 
         return integrator, context, salinator
 
-    def _create_waterbox(self, model='tip4pew'):
+    def _create_waterbox(self, model='tip4pew', npert=10):
         """
         Creates a DHFR system to re-use in tests.
         """
@@ -60,7 +59,6 @@ class TestSalinator(object):
         timestep = 2. * unit.femtoseconds
         collision_rate = 90. / unit.picoseconds
         pressure = 1. * unit.atmospheres
-        npert = 10
         salt_concentration = 0.2 * unit.molar
 
         # Make the water box test system with a fixed pressure
@@ -119,10 +117,10 @@ class TestSalinator(object):
 
         # Get the concentration for a specified chemical potential
         delta_chem = 315.0
-        predicted_concentration = salinator._predict_concentration(delta_chem, fn, volume)
+        predicted_concentration = salinator.predict_concentration(delta_chem, fn, volume)
 
         # Get the chemical potential from the concentration
-        predicted_delta_chem = salinator._invert_concentration(predicted_concentration, fn, volume)
+        predicted_delta_chem = salinator.invert_concentration(predicted_concentration, fn, volume)
 
         assert abs(predicted_delta_chem - delta_chem) < 1E-6
 
@@ -166,7 +164,7 @@ class TestSalinator(object):
         initial_nsalt = np.sum(salinator.swapper.stateVector == 1)
 
         # Add salt to the specified concentration
-        salinator.insert_to_concentration()
+        salinator.initialize_concentration()
 
         # Get the final number of salt
         final_nsalt = np.sum(salinator.swapper.stateVector == 1)
@@ -177,6 +175,16 @@ class TestSalinator(object):
         nonbonded_force = salinator._get_nonbonded_force()
         final_charge = salinator._get_system_charge(nonbonded_force)
         assert final_charge == 0
+
+    def test_update(self):
+        """
+        Test the ability for the wrapper to perform an instantaneous insertion/deletion move.
+        """
+        # Set number of perturbations to zero for instantaneous insertions and deletions.
+        integrator, context, salinator = self._create_waterbox(npert=1)
+
+        salinator.update(nattempts=1)
+
 
 class TestWaterBoxSimulation(object):
     """
