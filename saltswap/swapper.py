@@ -233,10 +233,10 @@ class Swapper(object):
 
         # Reset statistics.
         self.reset_statistics()
-        self.naccepted_ncmc_integrator = []
+        self.naccepted_ncmc_integrator = 0.0
 
         # Record the log acceptance probability for each proposal
-        self.log_accept = []
+        self.log_accept = 0.0
 
         # Recording the cumulative work with the corresponding proposal
         self.proposal = [0, 0]      # [initial number of salt, proposed number of salt]
@@ -537,9 +537,9 @@ class Swapper(object):
 
             # Save the acceptance rate for the ncmc protocol if the propagator is Metropolized.
             try:
-                self.naccepted_ncmc_integrator.append(self.ncmc_integrator.getGlobalVariableByName('naccept') / self.ncmc_integrator.getGlobalVariableByName('ntrials'))
+                self.naccepted_ncmc_integrator = self.ncmc_integrator.getGlobalVariableByName('naccept') / self.ncmc_integrator.getGlobalVariableByName('ntrials')
             except:
-                self.naccepted_ncmc_integrator.append(0.0)
+                self.naccepted_ncmc_integrator = 0.0
 
         elif work_measurement == 'external':
             # Like the GHMC integrator above, except that energies are calculated with _get_potential_energy() for
@@ -565,10 +565,9 @@ class Swapper(object):
 
             # Save the acceptance rate for the ncmc protocol
             try:
-                self.naccepted_ncmc_integrator.append(
-                    self.ncmc_integrator.getGlobalVariableByName('naccept') / ncmc_integrator.getGlobalVariableByName('ntrials'))
+                self.naccepted_ncmc_integrator = self.ncmc_integrator.getGlobalVariableByName('naccept') / self.ncmc_integrator.getGlobalVariableByName('ntrials')
             except:
-                self.naccepted_ncmc_integrator.append(0.0)
+                self.naccepted_ncmc_integrator = 0.0
 
         else:
             raise Exception('Method to calculate work, "{0}", not recognized'.format(work_measurement))
