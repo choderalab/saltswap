@@ -57,7 +57,7 @@ class TestSalinator(object):
         # System parameters
         temperature = 300. * unit.kelvin
         timestep = 2. * unit.femtoseconds
-        collision_rate = 90. / unit.picoseconds
+        collision_rate = 90. / unit.picoseconds # Usually better to run with 1/ps, but this is more stable with minimization.
         pressure = 1. * unit.atmospheres
         salt_concentration = 0.2 * unit.molar
 
@@ -169,6 +169,7 @@ class TestSalinator(object):
         # Get the final number of salt
         final_nsalt = np.sum(salinator.swapper.stateVector == 1)
 
+        # As the system initially has no salt, there should be an increase in salt after salinator.initialize_concentration.
         assert final_nsalt > initial_nsalt
 
         # Ensure that the system remains neutral.
@@ -206,7 +207,7 @@ class TestWaterBoxSimulation(object):
         # System parameters
         temperature = 300. * unit.kelvin
         timestep = 2. * unit.femtoseconds
-        collision_rate = 90. / unit.picoseconds
+        collision_rate = 90. / unit.picoseconds # Usually better to run with 1/ps, but this is more stable with minimization.
         pressure = 1. * unit.atmospheres
         npert = 10
 
@@ -247,7 +248,7 @@ class TestWaterBoxSimulation(object):
         # System parameters
         temperature = 300. * unit.kelvin
         timestep = 2. * unit.femtoseconds
-        collision_rate = 90. / unit.picoseconds
+        collision_rate = 90. / unit.picoseconds # Usually better to run with 1/ps, but this is more stable with minimization.
         pressure = 1. * unit.atmospheres
         npert = 10
 
