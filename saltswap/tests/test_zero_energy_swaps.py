@@ -2,7 +2,7 @@ import numpy as np
 from simtk import openmm, unit
 from simtk.openmm import app
 from openmmtools.testsystems import WaterBox
-from saltswap.mcmc_samplers import MCMCSampler
+from saltswap.wrappers import MCMCSampler
 import pytest
 import os
 
