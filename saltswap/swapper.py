@@ -233,10 +233,10 @@ class Swapper(object):
 
         # Reset statistics.
         self.reset_statistics()
-        self.naccepted_ncmc_integrator = []
+        self.naccepted_ncmc_integrator = 0.0
 
         # Record the log acceptance probability for each proposal
-        self.log_accept = []
+        self.log_accept = 0.0
 
         # Recording the cumulative work with the corresponding proposal
         self.proposal = [0, 0]      # [initial number of salt, proposed number of salt]
@@ -537,9 +537,9 @@ class Swapper(object):
 
             # Save the acceptance rate for the ncmc protocol if the propagator is Metropolized.
             try:
-                self.naccepted_ncmc_integrator.append(self.ncmc_integrator.getGlobalVariableByName('naccept') / self.ncmc_integrator.getGlobalVariableByName('ntrials'))
+                self.naccepted_ncmc_integrator = self.ncmc_integrator.getGlobalVariableByName('naccept') / self.ncmc_integrator.getGlobalVariableByName('ntrials')
             except:
-                self.naccepted_ncmc_integrator.append(0.0)
+                self.naccepted_ncmc_integrator = 0.0
 
         elif work_measurement == 'external':
             # Like the GHMC integrator above, except that energies are calculated with _get_potential_energy() for
@@ -565,10 +565,9 @@ class Swapper(object):
 
             # Save the acceptance rate for the ncmc protocol
             try:
-                self.naccepted_ncmc_integrator.append(
-                    self.ncmc_integrator.getGlobalVariableByName('naccept') / ncmc_integrator.getGlobalVariableByName('ntrials'))
+                self.naccepted_ncmc_integrator = self.ncmc_integrator.getGlobalVariableByName('naccept') / self.ncmc_integrator.getGlobalVariableByName('ntrials')
             except:
-                self.naccepted_ncmc_integrator.append(0.0)
+                self.naccepted_ncmc_integrator = 0.0
 
         else:
             raise Exception('Method to calculate work, "{0}", not recognized'.format(work_measurement))
@@ -614,20 +613,22 @@ class Swapper(object):
         log_accept = 0.0
 
         # Whether to delete or add salt by selecting random water molecules to turn into a cation and an anion or vice versa.
-        nwats, ncation, nanion = self.get_identity_counts()
-        if (ncation == 0):
+        (nwats, ncation, nanion) = self.get_identity_counts()
+        # Defining the number of salt pairs as the number of matched, neutralizing, ion pairs.
+        nsalt = min(ncation, nanion)
+        if nsalt == 0:
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0], size=2, replace=False)
             mode = "add salt"
             log_accept -= np.log(2)  # Due to asymmetric proposal probabilities
             cost = penalty[0]  # The free energy to remove salt and add 2 waters to bulk water
-        elif (ncation >= saltmax):
+        elif nsalt >= saltmax:
             mode = "remove salt"
             cation_index = np.random.choice(a=np.where(self.stateVector == 1)[0], size=1)[0]
             anion_index = np.random.choice(a=np.where(self.stateVector == 2)[0], size=1)[0]
             change_indices = np.array([cation_index, anion_index])
             log_accept -= np.log(2)  # Due to asymmetric proposal probabilities
             cost = penalty[1]
-        elif (np.random.random() < 0.5):
+        elif np.random.random() < 0.5:
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0], size=2, replace=False)
             mode = "add salt"
             cost = penalty[0]
@@ -662,18 +663,17 @@ class Swapper(object):
 
         # Saving the work and proposal (already in units of KT)
         if mode == "remove salt":
-            self.proposal = [ncation, ncation - 1]
+            self.proposal = [nsalt, nsalt - 1]
             self.cumulative_work = cumulative_work
         else:
-            self.proposal = [ncation, ncation + 1]
+            self.proposal = [nsalt, nsalt + 1]
             self.cumulative_work = cumulative_work
 
         # Cost = F_final - F_initial, where F_initial is the free energy to have the current number of salt molecules.
         log_accept += -cost - work
         # The acceptance test must include the probability of uniformally selecting which salt pair or water to exchange
-        (nwats, ncation, nanion) = self.get_identity_counts()
         if mode == 'add salt':
-            log_accept += np.log(1.0 * nwats * (nwats - 1) / (nanion + 1) / (nanion + 1))
+            log_accept += np.log(1.0 * nwats * (nwats - 1) / (ncation + 1) / (nanion + 1))
         else:
             log_accept += np.log(1.0 * ncation * nanion / (nwats + 1) / (nwats + 2))
 

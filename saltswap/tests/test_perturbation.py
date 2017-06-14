@@ -3,7 +3,7 @@ from openmmtools.testsystems import WaterBox
 from simtk.openmm import app
 import numpy as np
 import copy
-from saltswap.mcmc_samplers import MCMCSampler
+from saltswap.wrappers import MCMCSampler
 from saltswap.swapper import strip_in_unit_system
 
 class TestParamPerturbations(object):
@@ -44,7 +44,7 @@ class TestParamPerturbations(object):
         correctly using a box of water.
         """
         size = 15.0 * unit.angstrom
-        wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
+        wbox = WaterBox(box_edge=size, nonbondedMethod=app.PME, cutoff=size/2 - 0.5*unit.angstrom)
         state = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = 0, nprop = 0, npert = 1)
         saltswap = state.swapper
 
@@ -57,7 +57,7 @@ class TestParamPerturbations(object):
             for j in range(len(param_names)):
                 assert param_matrix[i,j] == saltswap.water_parameters[i][param_names[j]]
 
-    def test_salt_insertions_instant(self):
+    def salt_insertions_instant(self, model='tip3p'):
         """
         Verifies whether the saltswap non-bonded parameter exchanges do not affect the end states for instantaneous
         moves. This function tests the parameters in the perturbations water --> cation and water --> anion.
@@ -67,8 +67,8 @@ class TestParamPerturbations(object):
 
         Dmu_insert = -10000.0
         size = 15.0 * unit.angstrom
-        wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
-        state = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu_insert, nprop = 0, npert = 1)
+        wbox = WaterBox(model=model, box_edge=size, nonbondedMethod=app.PME, cutoff=size/2 - 0.5*unit.angstrom)
+        state = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem=Dmu_insert, nprop=0, npert=1)
         saltswap = state.swapper
 
         # Get the parameters of water before any perturbations
@@ -93,6 +93,18 @@ class TestParamPerturbations(object):
             for j in range(len(param_names)):
                 assert cation_matrix[i,j] == saltswap.cation_parameters[i][param_names[j]]
                 assert anion_matrix[i,j] == saltswap.anion_parameters[i][param_names[j]]
+
+    def test_tip3p_salt_insertions(self):
+        """
+        Ensures correct ion parameters for salt insertions in tip3p
+        """
+        self.salt_insertions_instant('tip3p')
+
+    def test_tip4pew_salt_insertions(self):
+        """
+        Ensures correct ion parameters for salt insertions in tip3p
+        """
+        self.salt_insertions_instant('tip4pew')
 
     def test_salt_insertions_ncmc(self):
         """
@@ -104,7 +116,7 @@ class TestParamPerturbations(object):
 
         Dmu_insert = -10000.0
         size = 15.0 * unit.angstrom
-        wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
+        wbox = WaterBox(box_edge=size, nonbondedMethod=app.PME, cutoff=size/2 - 0.5*unit.angstrom)
         state = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu_insert, nprop = 1, npert = 10)
         saltswap = state.swapper
 
@@ -128,7 +140,7 @@ class TestParamPerturbations(object):
                 assert cation_matrix[i,j] == saltswap.cation_parameters[i][param_names[j]]
                 assert anion_matrix[i,j] == saltswap.anion_parameters[i][param_names[j]]
 
-    def test_salt_deletions_instant(self):
+    def salt_deletions_instant(self, model='tip3p'):
         """
         Confirms the correct end state non-bonded parameters for the cyclic perturbations water --> cation --> water
         and water --> anion --> water. Testing instantaneous switches in a box of water.
@@ -136,7 +148,7 @@ class TestParamPerturbations(object):
 
         Dmu_insert = -10000.0
         size = 15.0 * unit.angstrom
-        wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
+        wbox = WaterBox(model=model, box_edge=size, nonbondedMethod=app.PME, cutoff=size/2 - 0.5*unit.angstrom)
         state = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu_insert, nprop = 0, npert = 1)
         saltswap = state.swapper
 
@@ -161,8 +173,20 @@ class TestParamPerturbations(object):
             nosalt = (n_ions == 0)
 
         # Check that parameters of the deleted anion and cation match the orginal water parameters
-        assert np.sum (water_inital_params - self._get_params(saltswap, cation_index)) == 0.0
-        assert np.sum (water_inital_params - self._get_params(saltswap, anion_index)) == 0.0
+        assert np.sum(water_inital_params - self._get_params(saltswap, cation_index)) == 0.0
+        assert np.sum(water_inital_params - self._get_params(saltswap, anion_index)) == 0.0
+
+    def test_tip3p_salt_deletion(self):
+        """
+        Ensures correct tip3p parameters for salt deletion
+        """
+        self.salt_deletions_instant(model='tip3p')
+
+    def test_tip4pew_salt_deletion(self):
+        """
+        Ensures correct tip3p parameters for salt deletion
+        """
+        self.salt_deletions_instant(model='tip4pew')
 
     def test_salt_deletions_ncmc(self):
         """
@@ -171,7 +195,7 @@ class TestParamPerturbations(object):
         """
         Dmu_insert = -10000.0
         size = 15.0 * unit.angstrom
-        wbox = WaterBox(box_edge = size, nonbondedMethod = app.PME, cutoff = size/2 - 0.5*unit.angstrom)
+        wbox = WaterBox(box_edge=size, nonbondedMethod=app.PME, cutoff=size/2 - 0.5*unit.angstrom)
         state = MCMCSampler(wbox.system, wbox.topology, wbox.positions, delta_chem = Dmu_insert, nprop = 1, npert = 10)
         saltswap = state.swapper
 
@@ -196,5 +220,5 @@ class TestParamPerturbations(object):
             nosalt = (n_ions == 0)
 
         # Check that parameters of the deleted anion and cation match the orginal water parameters
-        assert np.sum (water_inital_params - self._get_params(saltswap, cation_index)) == 0.0
-        assert np.sum (water_inital_params - self._get_params(saltswap, anion_index)) == 0.0
+        assert np.sum(water_inital_params - self._get_params(saltswap, cation_index)) == 0.0
+        assert np.sum(water_inital_params - self._get_params(saltswap, anion_index)) == 0.0
