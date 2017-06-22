@@ -522,13 +522,13 @@ class Swapper(object):
         if work_measurement == 'internal':
             self.ncmc_integrator.setGlobalVariableByName("first_step", 0)
             # Propagation
-            self.ncmc_integrator.step(1)
+            self.ncmc_integrator.step(nprop)
             for stage in range(npert + 1):
                 # Perturbation
                 self._update_forces(mode, exchange_indices, stage)
                 self.forces_to_update.updateParametersInContext(context)
                 # Propagation
-                self.ncmc_integrator.step(1)
+                self.ncmc_integrator.step(nprop)
                 cumulative_work[stage] = self.ncmc_integrator.get_protocol_work(dimensionless=True)
 
             # Extract the internally calculated work from the integrator
@@ -579,7 +579,7 @@ class Swapper(object):
 
         return work, cumulative_work
 
-    def attempt_identity_swap(self, context, penalty, saltmax=None):
+    def attempt_identity_swap(self, context, penalty, saltmax=None, saltmin=None):
         """
         Attempt the exchange of (possibly multiple) chemical species.
 
@@ -592,6 +592,9 @@ class Swapper(object):
         saltmax : int
             The maximum number of salt pairs that you wish to be added. If None, then the maximum number is the
             number of water molecules divided by 2.
+        saltmin : int
+            The minimum number of salt pairs that you wish to be added. If None, then the saltmin is set to zero. If
+            there are fewer salt pairs than saltmin, insertions will always be attempted.
         """
         self.nattempted += 1
 
@@ -606,8 +609,10 @@ class Swapper(object):
             initial_velocities = state.getVelocities()
 
         # Introducing a maximum capacity of salt molecules for the 'self adjusted mixture sampling calibration.
-        if saltmax == None:
+        if saltmax is None:
             saltmax = (len(self.mutable_residues) - len(self.mutable_residues) % 2) / 2
+        if saltmin is None:
+            saltmin = 0
 
         # Initializing the exponent of the acceptance test. Adding to it as we go along.
         log_accept = 0.0
@@ -616,7 +621,7 @@ class Swapper(object):
         (nwats, ncation, nanion) = self.get_identity_counts()
         # Defining the number of salt pairs as the number of matched, neutralizing, ion pairs.
         nsalt = min(ncation, nanion)
-        if nsalt == 0:
+        if nsalt <= saltmin:
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0], size=2, replace=False)
             mode = "add salt"
             log_accept -= np.log(2)  # Due to asymmetric proposal probabilities
