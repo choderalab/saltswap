@@ -20,7 +20,7 @@ import simtk.unit as unit
 from openmmtools import integrators as open_integrators
 from scipy import optimize
 from saltswap.integrators import GHMCIntegrator
-
+from saltswap.sams_adapter import SAMSAdaptor
 
 # The parameters required to determine the chemical potential from concentration. These parameters have been calculated
 # from self-adjusted mixture sampling simulations using PME with a 10 Angstrom cutoff, Ewald tolerance of 1E-4, and a
@@ -43,7 +43,6 @@ default_tip3p_weights = {'fn':np.array([0., -320.03517865, -638.69626067, -956.5
                                             26.62441529, 26.55923851, 26.50940181, 26.44217547, 26.38498465, 26.3304819,
                                             26.2684076, 26.20687082, 26.15909901, 26.1107472 , 26.06642252, 26.00498962,
                                             25.93755518, 25.8777354 , 25.81917845, 25.75393419])}
-
 
 class Salinator(object):
     """
@@ -100,7 +99,7 @@ class Salinator(object):
     """
 
     def __init__(self, context, system, topology, ncmc_integrator, salt_concentration, pressure, temperature,
-                 npert=10000, water_name="HOH", cation_name='Na+', anion_name='Cl-', calibration_weights=None):
+                 npert=2000, nprop=5, water_name="HOH", cation_name='Na+', anion_name='Cl-', calibration_weights=None):
 
         """
         Parameters
@@ -117,15 +116,17 @@ class Salinator(object):
             The integrator used for NCMC propagation of insertion and deletions
         salt_concentration: simtk.unit.quantity.Quantity
             The macroscopic salt concentration that the simulation will be coupled to.
-        pressure : simtk.unit.Quantity compatible with atmospheres, optional, default=None
+        pressure: simtk.unit.Quantity compatible with atmospheres, optional, default=None
             For explicit solvent simulations, the pressure.
-        npert : int
+        npert: int
             Number of ncmc perturbation kernels. Set to 1 for instantaneous switching
+        nprop: int
+            The number of propagation steps per perturbation.
         water_name = str, optional, default='HOH'
             Name of water residue that will be exchanged with salt
-        cation_name : str, optional, default='Na+'
+        cation_name: str, optional, default='Na+'
             Name of cation residue from which parameters are to be taken.
-        anion_name : str, optional, default='Cl-'
+        anion_name: str, optional, default='Cl-'
             Name of anion residue from which parameters are to be taken.
         calibration_weights: dict
             Dictionary containing the salt insertion free energies and volumes from the calibration of the chemical
@@ -140,11 +141,10 @@ class Salinator(object):
         # NCMC will not be performed for 1 perturbation.
         if self.npert > 1:
             # Number of propagation steps per perturbation.
-            # nprop > 1 only suported for saltswap.integrators.GHMCIntegrator.
-            nprop = 1
+            self.nprop = nprop
         elif self.npert == 1:
             # No propagation steps per perturbation, which mean no NCMC, ansd instantaneous insertion/deletion attempts.
-            nprop = 0
+            self.nprop = 0
         else:
             raise Exception('Invalid number of perturbation steps specified. Must be at least 1.')
 
@@ -376,6 +376,73 @@ class Salinator(object):
         Perform MCMC salt insertion/deletion moves.
         """
         self.swapper.update(self.context, nattempts=nattempts, cost=chemical_potential, saltmax=saltmax)
+
+
+class SAMSSalinator(Salinator):
+    """
+    Class to perform self-adjusted mixture sampling over salt numbers.
+    """
+    def  __init__(self, saltmin,  saltmax, initial_bias=None, two_stage=True, beta=0.7, target_weights=None,
+                  flat_hist=0.2, *args, **kwargs):
+        super(SAMSSalinator, self).__init__(self, *args, **kwargs)
+
+        if saltmax <= saltmin:
+            raise Exception('The maximum amount of salt must be less than the minimum.')
+
+        self.nstates = 1 + saltmax - saltmin
+        self.state_counts = np.zeros(self.nstates)
+        self.nsalt = self.count_salt()
+
+        if initial_bias is None:
+            self.bias = np.zeros(self.nstates)
+        else:
+            self.bias = initial_bias
+
+        self.adaptor = SAMSAdaptor(self.nstates, zetas=self.bias, target_weights=target_weights, two_stage=two_stage,
+                                   beta=beta, flat_hist=flat_hist)
+
+    def count_salt(self):
+        """
+        Count and return the number of neutral anion and cation pairs.
+        """
+        nwater, ncation, nanion = self.swapper.get_identity_counts()
+        nsalt = min(ncation, nanion)
+        return nsalt
+
+    def generate_penalty(self):
+        """
+        Based on the current state and current value of the free energy estimate, calculate the penalty that will be
+        used in the acceptance test to add or remove salt.
+
+        Return
+        ------
+        penalty: list of floats.
+            The bias that will be applied when inserting or deleting salt.
+        """
+
+        if self.nsalt == self.saltmax:
+            penalty = [0.0, self.bias[self.nsalt - 1] - self.bias[self.nsalt]]
+        elif self.nsalt <= self.saltmin:
+            penalty = [self.bias[self.nsalt + 1] - self.bias[self.nsalt], 0.0]
+        else:
+            penalty = [self.bias[self.nsalt + 1] - self.bias[self.nsalt],
+                       self.bias[self.nsalt - 1] - self.bias[self.nsalt]]
+        return penalty
+
+    def update(self):
+        """
+        Perform one satl insertion/deletion moves and update the estimate for the free energy.
+        """
+        # Insert or delete salt
+        penalty = self.generate_penalty()
+        self.swapper.attempt_identity_swap(self.context, penalty=penalty, saltmax=self.saltmax, saltmin=self.saltmin)
+
+        # Update the SAMS bias
+        self.nsalt = self.count_salt()
+        noisy = np.zeros(self.nstates)
+        noisy[self.nsalt] = 1
+        self.state_counts[self.nsalt] += 1
+        self.bias = self.adaptor.update(state=self.nsalt, noisy_observation=noisy, histogram=self.state_counts)
 
 
 class MCMCSampler(object):
