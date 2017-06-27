@@ -82,7 +82,7 @@ class CreateNetCDF(object):
 
         self.ncfile.sync()
 
-    def init_sample_state_variables(self, swapper):
+    def init_sample_state_variables(self, swapper, sams_max=None):
         """
         Recording the simulation variables.
 
@@ -90,6 +90,8 @@ class CreateNetCDF(object):
         ----------
         swapper: saltswap.swapper
             the driver for saltswap
+        sams_max: int or None.
+            if running a Self Adjusted Mixture Simulation, this is maximum number of salt pairs that will be inserted.
         """
         sample_state_group = self.ncfile.createGroup('Sample state data')
 
@@ -122,9 +124,14 @@ class CreateNetCDF(object):
         # The log acceptance probability for each attempt
         sample_state_group.createVariable('log_accept', 'f4', ('iteration', 'attempt'), zlib=True)
 
+        # The biases from self-adjusted mixture sampling.
+        if sams_max is not None:
+            sample_state_group.createDimension('nsalt', sams_max + 1)
+            sample_state_group.createVariable('sams bias', 'f8', ('iteration', 'nsalt'), zlib=True)
+
         self.ncfile.sync()
 
-    def create_netcdf(self, swapper, variable_dic=None):
+    def create_netcdf(self, swapper, variable_dic=None, sams_max=None):
         """
         Create a
         Parameters
@@ -133,15 +140,17 @@ class CreateNetCDF(object):
             the driver for saltswap
         variable_dic: dic
             dictionary containing additional parameters to be stored
+        sams_max: int or None
+            if running SAMS, the maximum number of salt pairs that will be inserted.
         """
         self.init_control_variables(swapper, variable_dic)
-        self.init_sample_state_variables(swapper)
+        self.init_sample_state_variables(swapper, sams_max)
 
         self.ncfile.sync()
 
         return self.ncfile
 
-def record_netcdf(ncfile, context, swapper, iteration, attempt=0, sync=True):
+def record_netcdf(ncfile, context, swapper, iteration, attempt=0, sams_bias=None, sync=True):
     """
     Store the variables in the context and swapper objects.
 
@@ -153,6 +162,8 @@ def record_netcdf(ncfile, context, swapper, iteration, attempt=0, sync=True):
         Contains the OpenMM simulation data and parameters
     swapper: saltswap.swapper
         the driver for saltswap
+    sams_bias: numpy.ndarray or None.
+        the Self Adjusted Mixture Sampling weights.
     """
     # Openmm state information
     state = context.getState(getPositions=True, getEnergy=True, enforcePeriodicBox=True)
@@ -175,6 +186,9 @@ def record_netcdf(ncfile, context, swapper, iteration, attempt=0, sync=True):
     ncfile.groups['Sample state data']['naccepted'][iteration, attempt] = swapper.naccepted
     ncfile.groups['Sample state data']['nattempted'][iteration, attempt] = swapper.nattempted
     ncfile.groups['Sample state data']['log_accept'][iteration, attempt] =  swapper.log_accept
+
+    if sams_bias is not None:
+        ncfile.groups['Sample state data']['sams bias'][iteration, :] = sams_bias
 
     if sync:
         ncfile.sync()
