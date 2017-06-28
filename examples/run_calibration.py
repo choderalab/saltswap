@@ -1,13 +1,48 @@
 from simtk import openmm, unit
 from openmmtools.testsystems import WaterBox
 from simtk.openmm import app
-
 import numpy as np
-
-from saltswap import wrappers,
+from saltswap import wrappers
 from openmmtools import integrators
 import saltswap.record as Record
-from bams.sams_adapter import SAMSAdaptor
+
+
+def get_initial_bias(fn, max_salt):
+    """
+    Get decent estimates of the initial biases for SAMS by via least squares fitting of previously calculated relative free energies.
+    Using the model
+        y = c + m*log(x + 1)
+    where y is the relative free energy to add salt, x is the number of salt present; c and m are to be determined.
+
+    This allows us to extrapolate previously calculated free energies to salt numbers that have not been simulatied.
+
+    Parameters
+    ----------
+    fn: numpy.ndarray
+        the cumulative free energy to add salt from zero to some amount. The length of fn = max_salt + 1, as
+        the first value is the free energy to add no salt.
+    max_salt: int
+        the maximum number of salt for which free energies will be produced.
+
+    Returns
+    -------
+    cumulative_prediction: numpy.ndarray
+        the predicted cumulative free energy to add salt
+    """
+    # Get the relative free energies
+    y = np.diff(fn)
+    x = np.log(np.arange(len(y)) + 1.0)
+
+    # Perform least squares fitting
+    A = np.vstack([x, np.ones(len(x))]).T
+    m, c = np.linalg.lstsq(A, y)[0]
+
+    # Use the fitted parameters to predict the cumulative free energies to add salt for the supplied values.
+    relative_prediction = c + m * np.log(np.arange(max_salt) + 1.0)
+    cumulative_prediction = np.hstack((0.0, np.cumsum(relative_prediction)))
+
+    return cumulative_prediction
+
 
 if __name__ == "__main__":
     import argparse
@@ -49,6 +84,14 @@ if __name__ == "__main__":
     collision_rate = 1./unit.picoseconds
     pressure = 1.*unit.atmospheres
 
+    # SAMS parameters
+    saltmin = 0
+    nstates = args.saltmax - saltmin + 1
+    target_weights = np.repeat(1./float(nstates), nstates)
+    two_stage = True    # Whether to do burn-in stage
+    beta = 0.7          # Exponent for burn-in stage
+    precision = 0.2     # How close the sampling proportions must be to the target weights before the burn-in finishes.
+
     # Make the water box test system with a fixed pressure
     wbox = WaterBox(model=args.model, box_edge=box_edge, nonbondedMethod=app.PME, cutoff=10*unit.angstrom, ewaldErrorTolerance=1E-4)
     wbox.system.addForce(openmm.MonteCarloBarostat(pressure, temperature))
@@ -83,15 +126,24 @@ if __name__ == "__main__":
     context.setPositions(wbox.positions)
     context.setVelocitiesToTemperature(temperature)
 
-    # Create the swapper object for the insertion and deletion of salt
-    # Create the salinator object for the insertion and deletion of salt
-    sams_salinator = wrappers.SAMSSalinator(context=context, system=wbox.system, topology=wbox.topology,
-                                   ncmc_integrator=ncmc_langevin, salt_concentration=0.1*unit.molar,
-                                   pressure=pressure, temperature=temperature, npert=npert, water_name='HOH', )
+    # Initialize SAMS adaptor with previous estimates
+    if args.model == 'tip3p':
+        fn = wrappers.default_tip3p_weights['fn']
+        initial_bias = get_initial_bias(fn, args.saltmax)
+    elif args.model == 'tip4pew':
+        fn = wrappers.default_tip4pew_weights['fn']
+        initial_bias = get_initial_bias(fn, args.saltmax)
+    else:
+        fn = (wrappers.default_tip4pew_weights['fn'] + wrappers.default_tip3p_weights['fn']) / 2.0
+        initial_bias = get_initial_bias(fn, args.saltmax)
 
-    mcdriver = Swapper(system=wbox.system, topology=wbox.topology, temperature=temperature, delta_chem=0.0,
-                        ncmc_integrator=ncmc_langevin, pressure=pressure, npert=npert, nprop=1)
-
+    # Create the sams salinator object for the calculating free energies for the insertion and deletion of salt
+    sams_salinator = wrappers.SAMSSalinator(saltmin=0, saltmax=args.saltmax, initial_bias=initial_bias,
+                                            two_stage=two_stage, beta=beta, target_weights=target_weights,
+                                            precision=precision, context=context, system=wbox.system,
+                                            topology=wbox.topology, ncmc_integrator=ncmc_langevin,
+                                            salt_concentration=0.1 * unit.molar, pressure=pressure,
+                                            temperature=temperature, npert=npert, water_name='HOH')
     # Thermalize the system
     langevin.step(args.equilibration)
 
@@ -100,10 +152,7 @@ if __name__ == "__main__":
     creator = Record.CreateNetCDF(filename)
     simulation_control_parameters = {'timestep': timestep, 'splitting': splitting, 'box_edge': box_edge,
                                      'collision_rate': collision_rate}
-    ncfile = creator.create_netcdf(mcdriver, simulation_control_parameters)
-    # Create an additional dimension to store sams bias
-    ncfile.createDimension('nsalt', args.saltmax + 1)
-    ncfile.groups['Sample state data'].createVariable('sams bias', 'f8', ('iteration', 'nsalt'), zlib=True)
+    ncfile = creator.create_netcdf(sams_salinator.swapper, simulation_control_parameters, nstates=nstates)
 
     if args.save_configs:
         # Create PDB file to view with the (binary) dcd file.
@@ -117,48 +166,18 @@ if __name__ == "__main__":
         dcdfile = open(args.out + '.dcd', 'wb')
         dcd = app.DCDFile(file=dcdfile, topology=wbox.topology, dt=timestep)
 
-    # Initialize SAMS adaptor
-    initial_guess = 317.0
-    # Initializing the  bias using the free energy to insert a single salt molecule
-    bias = np.arange(args.saltmax + 1) * initial_guess
-    adaptor = SAMSAdaptor(nstates=args.saltmax + 1, zetas=bias, beta=0.6, flat_hist=0.1)
-    state_counts = np.zeros(args.saltmax + 1)
-
-    # Proposal mechanism for SAMS
-    def gen_penalty(nsalt, bias, saltmax):
-        if nsalt == saltmax:
-            penalty = [0.0, bias[nsalt - 1] - bias[nsalt]]
-        elif nsalt == 0:
-            penalty = [bias[nsalt + 1] - bias[nsalt], 0.0]
-        else:
-            penalty = [bias[nsalt + 1] - bias[nsalt],
-                       bias[nsalt - 1] - bias[nsalt]]
-        return penalty
-
     # The actual simulation
     k = 0
     for iteration in range(args.iterations):
-        # Establish the free energy penalty for adding or removing more salt
-        nwater, ncation, nanion = mcdriver.get_identity_counts()
-        penalty = gen_penalty(ncation, bias, args.saltmax)
-
-        # Propagate configurations and salt concentrations
+        # Propagate configurations and salt concentrations, and update SAMS bias.
         langevin.step(args.steps)
-        mcdriver.attempt_identity_swap(context, penalty=penalty, saltmax=args.saltmax)
-
-        # Update SAMS estimator
-        nwater, ncation, nanion = mcdriver.get_identity_counts()
-        noisy = np.zeros(args.saltmax + 1)
-        noisy[ncation] = 1
-        state_counts[ncation] += 1
-        bias = adaptor.update(state=ncation, noisy_observation=noisy, histogram=state_counts)
+        sams_salinator.update()
 
         # Save data
         if iteration % args.save_freq == 0:
             # Record the simulation data
-            Record.record_netcdf(ncfile, context, mcdriver, k, attempt=0, sync=False)
-            ncfile.groups['Sample state data']['sams bias'][k, :] = bias
-            ncfile.sync()
+            Record.record_netcdf(ncfile, context, sams_salinator.swapper, k, attempt=0, sams_bias=sams_salinator.bias, sync=True)
+
             if args.save_configs:
                 # Record the simulation configurations
                 positions = context.getState(getPositions=True, enforcePeriodicBox=True).getPositions(asNumpy=True)

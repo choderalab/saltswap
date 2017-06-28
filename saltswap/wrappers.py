@@ -100,7 +100,6 @@ class Salinator(object):
 
     def __init__(self, context, system, topology, ncmc_integrator, salt_concentration, pressure, temperature,
                  npert=2000, nprop=5, water_name="HOH", cation_name='Na+', anion_name='Cl-', calibration_weights=None):
-
         """
         Parameters
         ----------
@@ -380,15 +379,37 @@ class Salinator(object):
 
 class SAMSSalinator(Salinator):
     """
-    Class to perform self-adjusted mixture sampling over salt numbers.
+    Class to perform self-adjusted mixture sampling over salt-pair numbers.
     """
-    def  __init__(self, saltmin,  saltmax, initial_bias=None, two_stage=True, beta=0.7, target_weights=None,
-                  flat_hist=0.2, *args, **kwargs):
-        super(SAMSSalinator, self).__init__(self, *args, **kwargs)
+    def __init__(self, saltmin=0, saltmax=20, initial_bias=None, two_stage=True, beta=0.7, target_weights=None,
+                 precision=0.1, **kwargs):
+        """
+        Parameters
+        ----------
+        saltmin: int
+            the minimum number of salt pairs that will be sampled over.
+        saltmax: int
+            the maximum number of salt pairs that will be sampled over.
+        initial_bias: numpy.ndarray
+            array of the initial values of the SAMS biases.
+        two_stage: bool
+            whether to perform a two-stage procedure, where the first is a burn-in.
+        beta: float
+            the exponent of the gain in the two-stage procedure. Should be between 0.5 and 1.
+        target_weights: numpy.ndarray
+            the target state sampling proportions that the biases will be optimized to obtain.
+        precision: float
+            the precision to which the sampling proportions will match the target weights before the two-stage
+            procedure is terminated.
 
+        """
         if saltmax <= saltmin:
             raise Exception('The maximum amount of salt must be less than the minimum.')
 
+        super(SAMSSalinator, self).__init__(**kwargs)
+
+        self.saltmin = saltmin
+        self.saltmax = saltmax
         self.nstates = 1 + saltmax - saltmin
         self.state_counts = np.zeros(self.nstates)
         self.nsalt = self.count_salt()
@@ -399,8 +420,7 @@ class SAMSSalinator(Salinator):
             self.bias = initial_bias
 
         self.adaptor = SAMSAdaptor(self.nstates, zetas=self.bias, target_weights=target_weights, two_stage=two_stage,
-                                   beta=beta, flat_hist=flat_hist)
-
+                                   beta=beta, precision=precision)
     def count_salt(self):
         """
         Count and return the number of neutral anion and cation pairs.

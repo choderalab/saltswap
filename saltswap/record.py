@@ -82,7 +82,7 @@ class CreateNetCDF(object):
 
         self.ncfile.sync()
 
-    def init_sample_state_variables(self, swapper, sams_max=None):
+    def init_sample_state_variables(self, swapper, nstates=None):
         """
         Recording the simulation variables.
 
@@ -90,8 +90,8 @@ class CreateNetCDF(object):
         ----------
         swapper: saltswap.swapper
             the driver for saltswap
-        sams_max: int or None.
-            if running a Self Adjusted Mixture Simulation, this is maximum number of salt pairs that will be inserted.
+        nstates: int or None.
+            if running a Self Adjusted Mixture Simulation, this is number of states.
         """
         sample_state_group = self.ncfile.createGroup('Sample state data')
 
@@ -125,13 +125,13 @@ class CreateNetCDF(object):
         sample_state_group.createVariable('log_accept', 'f4', ('iteration', 'attempt'), zlib=True)
 
         # The biases from self-adjusted mixture sampling.
-        if sams_max is not None:
-            sample_state_group.createDimension('nsalt', sams_max + 1)
-            sample_state_group.createVariable('sams bias', 'f8', ('iteration', 'nsalt'), zlib=True)
+        if nstates is not None:
+            sample_state_group.createDimension('nstates', nstates)
+            sample_state_group.createVariable('sams bias', 'f8', ('iteration', 'nstates'), zlib=True)
 
         self.ncfile.sync()
 
-    def create_netcdf(self, swapper, variable_dic=None, sams_max=None):
+    def create_netcdf(self, swapper, variable_dic=None, nstates=None):
         """
         Create a
         Parameters
@@ -140,11 +140,11 @@ class CreateNetCDF(object):
             the driver for saltswap
         variable_dic: dic
             dictionary containing additional parameters to be stored
-        sams_max: int or None
-            if running SAMS, the maximum number of salt pairs that will be inserted.
+        nstates: int or None
+            The number of SAMS states if performing this simulation type..
         """
         self.init_control_variables(swapper, variable_dic)
-        self.init_sample_state_variables(swapper, sams_max)
+        self.init_sample_state_variables(swapper, nstates)
 
         self.ncfile.sync()
 
