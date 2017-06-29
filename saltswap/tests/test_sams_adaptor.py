@@ -83,7 +83,7 @@ class TestSAMSAdaptor(object):
         """
         nstates = 10
         target_weights = np.repeat(1.0 / nstates, nstates)
-        adaptor = SAMSAdaptor(nstates=nstates, two_stage=True, flat_hist=0.2, target_weights=target_weights)
+        adaptor = SAMSAdaptor(nstates=nstates, two_stage=True, precision=0.2, target_weights=target_weights)
 
         # Creating a histogram that is far from 'flat' and therefore should not stop the burn-in phase
         histogram = np.arange(nstates)
@@ -103,7 +103,7 @@ class TestSAMSAdaptor(object):
         """
         nstates = 10
         target_weights = np.repeat(1.0 / nstates, nstates)
-        adaptor = SAMSAdaptor(nstates=nstates, two_stage=True, flat_hist=0.2, target_weights=target_weights)
+        adaptor = SAMSAdaptor(nstates=nstates, two_stage=True, precision=0.2, target_weights=target_weights)
 
         # Creating a histogram that matches the target weights. The burn-in should stop.
         histogram = 100 * target_weights
