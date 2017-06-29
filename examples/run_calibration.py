@@ -6,11 +6,18 @@ from saltswap import wrappers
 from openmmtools import integrators
 import saltswap.record as Record
 
+"""
+A script to be used to calibrate the chemical potential. This script uses self adjusted mixture sampling (SAMS) to
+uniformly sample over salt pairs in a box of water. The free energy to add salt at different salt concentrations can be estimated
+from the SAMS weights or from the protocol work to add salt using the BAR estimator.
+
+This script includes a function to initialize the SAMS weights based on previously calculated free energies.
+"""
 
 def get_initial_bias(fn, max_salt):
     """
-    Get decent estimates of the initial biases for SAMS by via least squares fitting of previously calculated relative free energies.
-    Using the model
+    Get decent estimates of the initial biases for SAMS by via least squares fitting of previously calculated relative
+    free energies using the model
         y = c + m*log(x + 1)
     where y is the relative free energy to add salt, x is the number of salt present; c and m are to be determined.
 
@@ -26,8 +33,8 @@ def get_initial_bias(fn, max_salt):
 
     Returns
     -------
-    cumulative_prediction: numpy.ndarray
-        the predicted cumulative free energy to add salt
+    bias: numpy.ndarray
+        the negative of a crude estimate of the cumulative free energy to add salt
     """
     # Get the relative free energies
     y = np.diff(fn)
@@ -40,8 +47,9 @@ def get_initial_bias(fn, max_salt):
     # Use the fitted parameters to predict the cumulative free energies to add salt for the supplied values.
     relative_prediction = c + m * np.log(np.arange(max_salt) + 1.0)
     cumulative_prediction = np.hstack((0.0, np.cumsum(relative_prediction)))
+    bias = -cumulative_prediction
 
-    return cumulative_prediction
+    return bias
 
 
 if __name__ == "__main__":
@@ -64,32 +72,35 @@ if __name__ == "__main__":
     parser.add_argument('--model', type=str, choices=['tip3p','tip4pew'],
                         help="the water model, default=tip4ew", default='tip4pew')
     parser.add_argument('--npert', type=int,
-                        help="the number of ncmc perturbation kernels, default=10000", default=10000)
+                        help="the number of ncmc perturbation kernels, default=1000", default=1000)
+    parser.add_argument('--nprop', type=int,
+                        help="the number of propagation steps per perturbation kernels, default=10", default=10)
     parser.add_argument('--saltmax', type=int,
                         help="the maximum number of salt pairs that will be accepted, default=20", default=20)
     parser.add_argument('--platform', type=str, choices=['CPU','CUDA','OpenCL'],
                         help="the platform where the simulation will be run, default=CPU", default='CPU')
     parser.add_argument('--save_configs', action='store_true',
                         help="whether to save the configurations of the box of water, default=False", default=False)
+    parser.add_argument('--burnin', action='store_true',
+                        help="whether to perform the two-stage SAMS scheme, default=False", default=False)
     args = parser.parse_args()
 
     # Setting the parameters of the simulation
     timestep = args.timestep * unit.femtoseconds
     box_edge = args.box_edge * unit.angstrom
     npert = args.npert
-
-    # Fixed simulation parameters
+    nprop = args.nprop
     splitting = 'V R O R V'
-    temperature = 300.*unit.kelvin
-    collision_rate = 1./unit.picoseconds
-    pressure = 1.*unit.atmospheres
+    temperature = 300.0 *unit.kelvin
+    collision_rate = 1.0 / unit.picoseconds
+    pressure = 1.0 * unit.atmospheres
 
     # SAMS parameters
     saltmin = 0
     nstates = args.saltmax - saltmin + 1
     target_weights = np.repeat(1./float(nstates), nstates)
-    two_stage = True    # Whether to do burn-in stage
-    beta = 0.7          # Exponent for burn-in stage
+    two_stage = args.burnin    # Whether to do burn-in stage
+    beta = 0.7          # Exponent for gain during the burn-in stage
     precision = 0.2     # How close the sampling proportions must be to the target weights before the burn-in finishes.
 
     # Make the water box test system with a fixed pressure
@@ -143,7 +154,7 @@ if __name__ == "__main__":
                                             precision=precision, context=context, system=wbox.system,
                                             topology=wbox.topology, ncmc_integrator=ncmc_langevin,
                                             salt_concentration=0.1 * unit.molar, pressure=pressure,
-                                            temperature=temperature, npert=npert, water_name='HOH')
+                                            temperature=temperature, npert=npert, nprop=nprop, water_name='HOH')
     # Thermalize the system
     langevin.step(args.equilibration)
 

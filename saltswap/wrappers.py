@@ -92,10 +92,15 @@ class Salinator(object):
     >>> salinator.neutralize()
     >>> salinator.initialize_concentration()
 
-    Runing a short simulation by mixing MD and MCMC saltswap moves.
+    It's strongly adviced that the system is minimized and thermalized before running a production simulation. For the
+    purpose of this example, we'll skip this and jump straight into Running a short simulation. This is achieved by
+    mixing MD and MCMC saltswap moves.
     >>> for i in range(100):
     >>> ...     langevin.step(2000)
     >>> ...     salinator.update(nattempts=1)
+
+    One can use to tools in saltswap.record to save the simulation data at a given iteration.
+
     """
 
     def __init__(self, context, system, topology, ncmc_integrator, salt_concentration, pressure, temperature,
@@ -379,7 +384,77 @@ class Salinator(object):
 
 class SAMSSalinator(Salinator):
     """
-    Class to perform self-adjusted mixture sampling over salt-pair numbers.
+    Class to perform self-adjusted mixture sampling over salt-pair numbers between a minimum and maximum number.
+
+    Example
+    -------
+    Running SAMS on a box of TIP3P water. This sort of simulations that be used to calibrate the chemical potential for
+    the TIP3P water model and a particular set of non-bonded parameters.
+
+    >>> from simtk import openmm, unit
+    >>> from openmmtools import testsystems
+    >>> from openmmtools import integrators
+    >>> from saltswap.record import Record
+
+    Set the thermondynamic parameters
+    >>> temperature = 300.0 * unit.kelvin
+    >>> pressure = 1.0 * unit.atmospheres
+    >>> salt_concentration = 0.2 * unit.molar
+
+    Extract the test system:
+    >>> testobj = getattr(testsystems, 'WaterBox')
+    >>> testsys = testobj(model='tip3p', box_edge=30, nonbondedMethod=app.PME, cutoff=10*unit.angstrom,
+    ...                   ewaldErrorTolerance=1E-4)
+    >>> testsys.system.addForce(openmm.MonteCarloBarostat(pressure, temperature))
+
+    Create the compound integrator to perform molecular dynamics and the NCMC propagation. The choice of the Langevin
+    splitting is important here, as 'V R O R V' ensures low configuration space error for the unmetropolized dynamics.
+    >>> langevin = integrators.LangevinIntegrator(splitting='V R O R V', temperature=temperature,
+    >>> ...                                       measure_shadow_work=False, measure_heat=False)
+    >>> ncmc_langevin = integrators.ExternalPerturbationLangevinIntegrator(splitting='V R O R V',
+    >>> ...                              temperature=temperature, measure_shadow_work=False, measure_heat=False)
+    >>> integrator = openmm.CompoundIntegrator()
+    >>> integrator.addIntegrator(langevin)
+    >>> integrator.addIntegrator(ncmc_langevin)
+
+    Create the context:
+    >>> context = openmm.Context(testsys.system, integrator)
+    >>> context.setPositions(testsys.positions)
+    >>> context.setVelocitiesToTemperature(temperature)
+
+    Specify the maximum and minimum number of salt pairs that will be sampled over.
+    >>> saltmax = 20
+    >>> saltmin = 0
+
+    The total number of states that will be sampled from is
+    >>> nstates = saltmax - saltmin + 1
+
+    Create the SAMS salinator:
+    >>> sams_salinator = SAMSSalinator(saltmin, saltmax, context=context, system=testsys.system,
+    >>> ...                            topology=testsys.topology, ncmc_integrator=ncmc_langevin,
+    >>> ...                            salt_concentration=0.1 * unit.molar, pressure=pressure,
+    >>> ...                            temperature=temperature, npert=1000, nprop=10, water_name='HOH')
+
+    Although a salt concentration is specified, this will be ignored, and the above (by default) will attempt to sample
+    uniformly over all salt pairs between 0 and 20 inclusive.
+
+    It is important to note that SAMSSalinator uses the SAMS binary update scheme, which can be _very_ slow to
+    converge if the initial bias is far from the negative of the true free energy of the salt numbers. SAMSalinator
+    can be supplied with initial values of the biases via the 'initial_bias' flag. It's use is strongly recommended for
+    production simulations.
+
+    Initialize a netcdf file to store the simulation data, making sure to add the special commands to record the SAMS
+    weights.
+    >>> creator = Record.CreateNetCDF('out.nc')
+    >>> ncfile = creator.create_netcdf(sams_salinator.swapper, nstates=nstates)
+
+    Runing a short simulation by mixing MD and MCMC saltswap moves and saving the simulation data.
+    >>> for i in range(100):
+    >>> ...     langevin.step(2000)
+    >>> ...     sams_salinator.update()
+    >>> ...     Record.record_netcdf('out.nc', context, sams_salinator.swapper, i,sams_bias=sams_salinator.bias)
+
+    All the data required to calibrate the chemical potential can be found in 'out.nc'.
     """
     def __init__(self, saltmin=0, saltmax=20, initial_bias=None, two_stage=True, beta=0.7, target_weights=None,
                  precision=0.1, **kwargs):

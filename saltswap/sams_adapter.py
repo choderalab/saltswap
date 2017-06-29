@@ -31,9 +31,9 @@ class SAMSAdaptor(object):
     Next, we'll initialize this SAMS update class, which will estimates given samples from states. We'll be using the
     two-stage scheme as described in equation 15 of [1], which will perform a burn-in for the free energies:
 
-    >>> adaptor = SAMSAdaptor(nstates=len(true_free_energies), two_stage=True, flat_hist=0.2)
+    >>> adaptor = SAMSAdaptor(nstates=len(true_free_energies), two_stage=True, precision=0.2)
 
-    The burn-in stage will finish when the state count histogram is within 20% (flat_hist=0.2) of the target weights,
+    The burn-in stage will finish when the state counts are within 20% (precision=0.2) of the target weights,
     which specify the sampling frequencies we want. By default, the target_weights are uniform over the states.
 
     The SAMSAdaptor works by tracking the state of the sampler and updating the bias accordingly. The bias is used to
@@ -58,7 +58,7 @@ class SAMSAdaptor(object):
     true_free_energies.
 
     """
-    def __init__(self, nstates, zetas=None, target_weights=None, two_stage=True, beta=0.6, flat_hist=0.2):
+    def __init__(self, nstates, zetas=None, target_weights=None, two_stage=True, beta=0.6, precision=0.2):
         """
         Parameters
         ----------
@@ -73,7 +73,7 @@ class SAMSAdaptor(object):
             Graphical Statistics Vol. 26 , Iss. 1, 2017. If true, the zeta parameters are adapted faster
         beta: float
             exponent of the gain during the bunr-in phase of the two-stage procedure. Should be between 0.5 and 1.0
-        flat_hist: float
+        precision: float
             degree of deviation that the state histogram can be from the target weights before the burn-in period
             in the two stage procedure ends. It is the maximum relative difference a histogram element can be
             from the respective target weight.
@@ -81,7 +81,7 @@ class SAMSAdaptor(object):
 
         self.nstates = nstates
         self.beta = beta
-        self.flat_hist = flat_hist
+        self.precision = precision
         self.two_stage = two_stage
         self.burnin = True
         self.time = 0
@@ -159,7 +159,7 @@ class SAMSAdaptor(object):
                 # Calculate how far the histogram is from the target weights
                 fraction = 1.0 * histogram / np.sum(histogram)
                 dist = np.max(np.absolute(fraction - self.target_weights) / self.target_weights)
-                if dist <= self.flat_hist:
+                if dist <= self.precision:
                     # If histogram appears suitably flat then switch to slow growth
                     self.burnin = False
                     self.burnin_length = self.time

@@ -141,9 +141,11 @@ class CreateNetCDF(object):
         variable_dic: dic
             dictionary containing additional parameters to be stored
         nstates: int or None
-            The number of SAMS states if performing this simulation type..
+            The number of SAMS states if performing this simulation type.
         """
-        self.init_control_variables(swapper, variable_dic)
+        if variable_dic is not None:
+            self.init_control_variables(swapper, variable_dic)
+
         self.init_sample_state_variables(swapper, nstates)
 
         self.ncfile.sync()
