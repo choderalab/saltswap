@@ -6,7 +6,8 @@ class SAMSAdaptor(object):
     Rao-Blackwellized or binary update schemes. To function, this class must be paired with a method to perform mixture
     sampling over states and configurations.
 
-    [1] Journal of Computational and Graphical Statistics Vol. 26 , Iss. 1, 2017
+    [1] Z. Tan, "Optimally adjusted mixture sampling and locally weighted histogram analysis", Journal of Computational
+    and Graphical Statistics Vol. 26 , Iss. 1, 2017
 
     Example
     -------

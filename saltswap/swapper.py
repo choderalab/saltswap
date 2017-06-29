@@ -14,7 +14,11 @@ to exchange water and salt with the simulation system. This means the number of 
 fluctuating quantity. The constant salt concentration simulation is achieved using the semi grand canonical ensemble,
 which allows molecules/particles to change identity.
 
-Non-equilibrium candidate Monte Carlo (_ncmc) is used to increase acceptance rates of switching.
+
+The wrapper for Swapper is contained in the Salinator class, which allows one to specify the macroscopic
+concentration of the reservior. Instead, one must specify a chemical potential, not concentration to run Swapper.
+
+Non-equilibrium candidate Monte Carlo (ncmc) is used to increase acceptance rates of switching.
 
 Based on code from openmm-constph.
 
@@ -22,7 +26,6 @@ Based on code from openmm-constph.
 Notes
 -----
 
-    * The code is still in development.
     * The Swapper class only performs moves that exchange two  water molecules for an anion-cation pair.
     * Swapper can be combined with molecular dynamics by alternating blocks of Swapper moves and molecular dynamics
      integration steps.
@@ -36,9 +39,7 @@ References
 
 Example
 -------
-
-The OpenMM wrapper for Swapper is contained in the MCMCSampler class, which allows alternating steps of molecular
-dynamics and Swapper moves. To run Swapper without that wrapper, see below for an example using a box of water.
+See below for an example using a box of water and a specified chemical potential.
 
 >>> from simtk import openmm, unit
 >>> from openmmtools.testsystems import WaterBox
