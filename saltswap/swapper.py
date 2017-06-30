@@ -14,7 +14,11 @@ to exchange water and salt with the simulation system. This means the number of 
 fluctuating quantity. The constant salt concentration simulation is achieved using the semi grand canonical ensemble,
 which allows molecules/particles to change identity.
 
-Non-equilibrium candidate Monte Carlo (_ncmc) is used to increase acceptance rates of switching.
+
+The wrapper for Swapper is contained in the Salinator class, which allows one to specify the macroscopic
+concentration of the reservior. Instead, one must specify a chemical potential, not concentration to run Swapper.
+
+Non-equilibrium candidate Monte Carlo (ncmc) is used to increase acceptance rates of switching.
 
 Based on code from openmm-constph.
 
@@ -22,7 +26,6 @@ Based on code from openmm-constph.
 Notes
 -----
 
-    * The code is still in development.
     * The Swapper class only performs moves that exchange two  water molecules for an anion-cation pair.
     * Swapper can be combined with molecular dynamics by alternating blocks of Swapper moves and molecular dynamics
      integration steps.
@@ -36,9 +39,7 @@ References
 
 Example
 -------
-
-The OpenMM wrapper for Swapper is contained in the MCMCSampler class, which allows alternating steps of molecular
-dynamics and Swapper moves. To run Swapper without that wrapper, see below for an example using a box of water.
+See below for an example using a box of water and a specified chemical potential.
 
 >>> from simtk import openmm, unit
 >>> from openmmtools.testsystems import WaterBox
@@ -522,13 +523,13 @@ class Swapper(object):
         if work_measurement == 'internal':
             self.ncmc_integrator.setGlobalVariableByName("first_step", 0)
             # Propagation
-            self.ncmc_integrator.step(1)
+            self.ncmc_integrator.step(nprop)
             for stage in range(npert + 1):
                 # Perturbation
                 self._update_forces(mode, exchange_indices, stage)
                 self.forces_to_update.updateParametersInContext(context)
                 # Propagation
-                self.ncmc_integrator.step(1)
+                self.ncmc_integrator.step(nprop)
                 cumulative_work[stage] = self.ncmc_integrator.get_protocol_work(dimensionless=True)
 
             # Extract the internally calculated work from the integrator
@@ -579,7 +580,7 @@ class Swapper(object):
 
         return work, cumulative_work
 
-    def attempt_identity_swap(self, context, penalty, saltmax=None):
+    def attempt_identity_swap(self, context, penalty, saltmax=None, saltmin=None):
         """
         Attempt the exchange of (possibly multiple) chemical species.
 
@@ -592,6 +593,9 @@ class Swapper(object):
         saltmax : int
             The maximum number of salt pairs that you wish to be added. If None, then the maximum number is the
             number of water molecules divided by 2.
+        saltmin : int
+            The minimum number of salt pairs that you wish to be added. If None, then the saltmin is set to zero. If
+            there are fewer salt pairs than saltmin, insertions will always be attempted.
         """
         self.nattempted += 1
 
@@ -606,8 +610,10 @@ class Swapper(object):
             initial_velocities = state.getVelocities()
 
         # Introducing a maximum capacity of salt molecules for the 'self adjusted mixture sampling calibration.
-        if saltmax == None:
+        if saltmax is None:
             saltmax = (len(self.mutable_residues) - len(self.mutable_residues) % 2) / 2
+        if saltmin is None:
+            saltmin = 0
 
         # Initializing the exponent of the acceptance test. Adding to it as we go along.
         log_accept = 0.0
@@ -616,7 +622,7 @@ class Swapper(object):
         (nwats, ncation, nanion) = self.get_identity_counts()
         # Defining the number of salt pairs as the number of matched, neutralizing, ion pairs.
         nsalt = min(ncation, nanion)
-        if nsalt == 0:
+        if nsalt <= saltmin:
             change_indices = np.random.choice(a=np.where(self.stateVector == 0)[0], size=2, replace=False)
             mode = "add salt"
             log_accept -= np.log(2)  # Due to asymmetric proposal probabilities

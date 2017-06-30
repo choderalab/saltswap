@@ -20,7 +20,7 @@ import simtk.unit as unit
 from openmmtools import integrators as open_integrators
 from scipy import optimize
 from saltswap.integrators import GHMCIntegrator
-
+from saltswap.sams_adapter import SAMSAdaptor
 
 # The parameters required to determine the chemical potential from concentration. These parameters have been calculated
 # from self-adjusted mixture sampling simulations using PME with a 10 Angstrom cutoff, Ewald tolerance of 1E-4, and a
@@ -44,12 +44,21 @@ default_tip3p_weights = {'fn':np.array([0., -320.03517865, -638.69626067, -956.5
                                             26.2684076, 26.20687082, 26.15909901, 26.1107472 , 26.06642252, 26.00498962,
                                             25.93755518, 25.8777354 , 25.81917845, 25.75393419])}
 
-
 class Salinator(object):
     """
     A user-friendly wrapper for performing constant-salt-concentration simulations using the saltswap machinery.
     Use this object to neutralize a system with the saltswap-specific ion topologies, initialize the ion concentration,
     and perform the NCMC accelerated insertiona and deletion of salt.
+
+    This class uses the Joung and Cheatham ion parameters, which are hard coded in the driver for the Swapper class.
+
+    References
+    ----------
+    [1] Frenkel and Smit, Understanding Molecular Simulation, from algorithms to applications, second edition, 2002
+    Academic Press. (Chapter 9, page 225 to 231)
+    [2] Nilmeir, Crooks, Minh, Chodera, Nonequilibrium candidate Monte Carlo is an efficient tool for equilibrium
+    simulation, PNAS, 108, E1009
+    [3] Joung, Cheatham, J. Phys. Chem. B, Vol. 112, No. 30. (1 July 2008), pp. 9020-9041
 
     Example
     -------
@@ -93,15 +102,19 @@ class Salinator(object):
     >>> salinator.neutralize()
     >>> salinator.initialize_concentration()
 
-    Runing a short simulation by mixing MD and MCMC saltswap moves.
+    It's strongly adviced that the system is minimized and thermalized before running a production simulation. For the
+    purpose of this example, we'll skip this and jump straight into Running a short simulation. This is achieved by
+    mixing MD and MCMC saltswap moves.
     >>> for i in range(100):
     >>> ...     langevin.step(2000)
     >>> ...     salinator.update(nattempts=1)
+
+    One can use to tools in saltswap.record to save the simulation data at a given iteration.
+
     """
 
     def __init__(self, context, system, topology, ncmc_integrator, salt_concentration, pressure, temperature,
-                 npert=10000, water_name="HOH", cation_name='Na+', anion_name='Cl-', calibration_weights=None):
-
+                 npert=2000, nprop=5, water_name="HOH", cation_name='Na+', anion_name='Cl-', calibration_weights=None):
         """
         Parameters
         ----------
@@ -117,15 +130,17 @@ class Salinator(object):
             The integrator used for NCMC propagation of insertion and deletions
         salt_concentration: simtk.unit.quantity.Quantity
             The macroscopic salt concentration that the simulation will be coupled to.
-        pressure : simtk.unit.Quantity compatible with atmospheres, optional, default=None
+        pressure: simtk.unit.Quantity compatible with atmospheres, optional, default=None
             For explicit solvent simulations, the pressure.
-        npert : int
+        npert: int
             Number of ncmc perturbation kernels. Set to 1 for instantaneous switching
+        nprop: int
+            The number of propagation steps per perturbation.
         water_name = str, optional, default='HOH'
             Name of water residue that will be exchanged with salt
-        cation_name : str, optional, default='Na+'
+        cation_name: str, optional, default='Na+'
             Name of cation residue from which parameters are to be taken.
-        anion_name : str, optional, default='Cl-'
+        anion_name: str, optional, default='Cl-'
             Name of anion residue from which parameters are to be taken.
         calibration_weights: dict
             Dictionary containing the salt insertion free energies and volumes from the calibration of the chemical
@@ -140,11 +155,10 @@ class Salinator(object):
         # NCMC will not be performed for 1 perturbation.
         if self.npert > 1:
             # Number of propagation steps per perturbation.
-            # nprop > 1 only suported for saltswap.integrators.GHMCIntegrator.
-            nprop = 1
+            self.nprop = nprop
         elif self.npert == 1:
             # No propagation steps per perturbation, which mean no NCMC, ansd instantaneous insertion/deletion attempts.
-            nprop = 0
+            self.nprop = 0
         else:
             raise Exception('Invalid number of perturbation steps specified. Must be at least 1.')
 
@@ -378,6 +392,171 @@ class Salinator(object):
         self.swapper.update(self.context, nattempts=nattempts, cost=chemical_potential, saltmax=saltmax)
 
 
+class SAMSSalinator(Salinator):
+    """
+    Class to perform self-adjusted mixture sampling over salt-pair numbers between a minimum and maximum number. This
+    class works in very much the same way as Salinator, except that one does not specify a macroscopic salt
+    concentration, but instead specifies a range of salt occupancies that will be sampled in proportion to according to
+    the specified target weights.
+
+    Use this class for calculating the free energies to add an remove many numbers of salt pairs.
+
+    Example
+    -------
+    Running SAMS on a box of TIP3P water. This sort of simulations that be used to calibrate the chemical potential for
+    the TIP3P water model and a particular set of non-bonded parameters.
+
+    >>> from simtk import openmm, unit
+    >>> from openmmtools import testsystems
+    >>> from openmmtools import integrators
+    >>> from saltswap.record import Record
+
+    Set the thermondynamic parameters
+    >>> temperature = 300.0 * unit.kelvin
+    >>> pressure = 1.0 * unit.atmospheres
+    >>> salt_concentration = 0.2 * unit.molar
+
+    Extract the test system:
+    >>> testobj = getattr(testsystems, 'WaterBox')
+    >>> testsys = testobj(model='tip3p', box_edge=30, nonbondedMethod=app.PME, cutoff=10*unit.angstrom,
+    ...                   ewaldErrorTolerance=1E-4)
+    >>> testsys.system.addForce(openmm.MonteCarloBarostat(pressure, temperature))
+
+    Create the compound integrator to perform molecular dynamics and the NCMC propagation. The choice of the Langevin
+    splitting is important here, as 'V R O R V' ensures low configuration space error for the unmetropolized dynamics.
+    >>> langevin = integrators.LangevinIntegrator(splitting='V R O R V', temperature=temperature,
+    >>> ...                                       measure_shadow_work=False, measure_heat=False)
+    >>> ncmc_langevin = integrators.ExternalPerturbationLangevinIntegrator(splitting='V R O R V',
+    >>> ...                              temperature=temperature, measure_shadow_work=False, measure_heat=False)
+    >>> integrator = openmm.CompoundIntegrator()
+    >>> integrator.addIntegrator(langevin)
+    >>> integrator.addIntegrator(ncmc_langevin)
+
+    Create the context:
+    >>> context = openmm.Context(testsys.system, integrator)
+    >>> context.setPositions(testsys.positions)
+    >>> context.setVelocitiesToTemperature(temperature)
+
+    Specify the maximum and minimum number of salt pairs that will be sampled over.
+    >>> saltmax = 20
+    >>> saltmin = 0
+
+    The total number of states that will be sampled from is
+    >>> nstates = saltmax - saltmin + 1
+
+    Create the SAMS salinator:
+    >>> sams_salinator = SAMSSalinator(saltmin, saltmax, context=context, system=testsys.system,
+    >>> ...                            topology=testsys.topology, ncmc_integrator=ncmc_langevin,
+    >>> ...                            salt_concentration=0.1 * unit.molar, pressure=pressure,
+    >>> ...                            temperature=temperature, npert=1000, nprop=10, water_name='HOH')
+
+    Although a salt concentration is specified, this will be ignored, and the above (by default) will attempt to sample
+    uniformly over all salt pairs between 0 and 20 inclusive.
+
+    It is important to note that SAMSSalinator uses the SAMS binary update scheme, which can be _very_ slow to
+    converge if the initial bias is far from the negative of the true free energy of the salt numbers. SAMSalinator
+    can be supplied with initial values of the biases via the 'initial_bias' flag. It's use is strongly recommended for
+    production simulations.
+
+    Initialize a netcdf file to store the simulation data, making sure to add the special commands to record the SAMS
+    weights.
+    >>> creator = Record.CreateNetCDF('out.nc')
+    >>> ncfile = creator.create_netcdf(sams_salinator.swapper, nstates=nstates)
+
+    Runing a short simulation by mixing MD and MCMC saltswap moves and saving the simulation data.
+    >>> for i in range(100):
+    >>> ...     langevin.step(2000)
+    >>> ...     sams_salinator.update()
+    >>> ...     Record.record_netcdf('out.nc', context, sams_salinator.swapper, i,sams_bias=sams_salinator.bias)
+
+    All the data required to calibrate the chemical potential can be found in 'out.nc'.
+    """
+    def __init__(self, saltmin=0, saltmax=20, initial_bias=None, two_stage=True, beta=0.7, target_weights=None,
+                 precision=0.1, **kwargs):
+        """
+        Parameters
+        ----------
+        saltmin: int
+            the minimum number of salt pairs that will be sampled over.
+        saltmax: int
+            the maximum number of salt pairs that will be sampled over.
+        initial_bias: numpy.ndarray
+            array of the initial values of the SAMS biases.
+        two_stage: bool
+            whether to perform a two-stage procedure, where the first is a burn-in.
+        beta: float
+            the exponent of the gain in the two-stage procedure. Should be between 0.5 and 1.
+        target_weights: numpy.ndarray
+            the target state sampling proportions that the biases will be optimized to obtain.
+        precision: float
+            the precision to which the sampling proportions will match the target weights before the two-stage
+            procedure is terminated.
+
+        """
+        if saltmax <= saltmin:
+            raise Exception('The maximum amount of salt must be less than the minimum.')
+
+        super(SAMSSalinator, self).__init__(**kwargs)
+
+        self.saltmin = saltmin
+        self.saltmax = saltmax
+        self.nstates = 1 + saltmax - saltmin
+        self.state_counts = np.zeros(self.nstates)
+        self.nsalt = self.count_salt()
+
+        if initial_bias is None:
+            self.bias = np.zeros(self.nstates)
+        else:
+            self.bias = initial_bias
+
+        self.adaptor = SAMSAdaptor(self.nstates, zetas=self.bias, target_weights=target_weights, two_stage=two_stage,
+                                   beta=beta, precision=precision)
+    def count_salt(self):
+        """
+        Count and return the number of neutral anion and cation pairs.
+        """
+
+        # Using the Swapper class that's inherited from the Salinator class.
+        nwater, ncation, nanion = self.swapper.get_identity_counts()
+        nsalt = min(ncation, nanion)
+        return nsalt
+
+    def generate_penalty(self):
+        """
+        Based on the current state and current value of the free energy estimate, calculate the penalty that will be
+        used in the acceptance test to add or remove salt.
+
+        Return
+        ------
+        penalty: list of floats.
+            The bias that will be applied when inserting or deleting salt.
+        """
+
+        if self.nsalt == self.saltmax:
+            penalty = [0.0, self.bias[self.nsalt - 1] - self.bias[self.nsalt]]
+        elif self.nsalt <= self.saltmin:
+            penalty = [self.bias[self.nsalt + 1] - self.bias[self.nsalt], 0.0]
+        else:
+            penalty = [self.bias[self.nsalt + 1] - self.bias[self.nsalt],
+                       self.bias[self.nsalt - 1] - self.bias[self.nsalt]]
+        return penalty
+
+    def update(self):
+        """
+        Perform one satl insertion/deletion moves and update the estimate for the free energy.
+        """
+        # Insert or delete salt
+        penalty = self.generate_penalty()
+        self.swapper.attempt_identity_swap(self.context, penalty=penalty, saltmax=self.saltmax, saltmin=self.saltmin)
+
+        # Update the SAMS bias
+        self.nsalt = self.count_salt()
+        noisy = np.zeros(self.nstates)
+        noisy[self.nsalt] = 1
+        self.state_counts[self.nsalt] += 1
+        self.bias = self.adaptor.update(state=self.nsalt, noisy_observation=noisy, histogram=self.state_counts)
+
+
 class MCMCSampler(object):
     """
     Simplified wrapper for mixing molecular dynamics and MCMC saltswap moves. Greatly simplifies the setup procedure,
@@ -592,116 +771,3 @@ class MCMCSampler(object):
         """
         for i in range(nmoves):
             self.move(mdsteps, saltsteps, delta_chem)
-
-
-class SaltSAMS(MCMCSampler):
-    """
-    DEPRICATED
-    TODO: remove and replace with machinery from the BAMS repo.
-
-    Implementation of self-adjusted mixture sampling for exchanging water and salts in a grand canonical methodology. The
-    mixture is over integer increments of the number of salt molecules up to a specified maximum. The targed density is
-    currently hard coded in as uniform over the number of salt molecules.
-
-    References
-    ----------
-    [1] Z. Tan, Optimally adjusted mixture sampling and locally weighted histogram analysis
-        DOI: 10.1080/10618600.2015.111397
-    """
-
-    def __init__(self, system, topology, positions, temperature=300 * unit.kelvin, pressure=1 * unit.atmospheres,
-                 delta_chem=0, mdsteps=1000, saltsteps=1, volsteps=25,
-                 platform='CPU', npert=0, nprop=0, propagator='GHMC', niterations=1000, burnin=100, b=0.7, saltmax=50):
-
-        super(SaltSAMS, self).__init__(system=system, topology=topology, positions=positions, temperature=temperature,
-                                       pressure=pressure, delta_chem=delta_chem, mdsteps=mdsteps, saltsteps=saltsteps,
-                                       volsteps=volsteps,
-                                       platform=platform, npert=npert, nprop=nprop, propagator=propagator)
-
-        self.burnin = burnin
-        self.b = b
-        self.niterations = niterations
-        self.step = 1
-        self.saltmax = saltmax
-
-        self.zeta = np.zeros(saltmax + 1)
-        self.pi = np.ones(saltmax + 1) / (saltmax + 1)
-
-        # Keeping track of the state visited and the values of the vector of zetas
-        self.zetatime = [self.zeta]
-        self.statetime = []
-
-        self.update_state()
-
-    def update_state(self):
-        """
-        The find which distribution the Sampler is in, equal to the number of salt pairs. The number of salt pairs
-        serves as the index for target density and free energy.
-        """
-        (junk1, nsalt, junk2) = self.swapper.get_identity_counts()
-        self.nsalt = nsalt
-        self.statetime.append(nsalt)
-
-    def gen_samslabel(self, saltsteps=None):
-        """
-        Attempt a move to add or remove salt molecules. In labelled mixture sampling parlance, a new label is generated
-        using a local jump strategy. This function overwrites the gen_label in the 'Sample' class, so that the free
-        energy estimates (zeta) can be used to weight transitions.
-
-        Parameters
-        ----------
-        saltsteps: int
-            The number of water-salt swaps that will be attempted
-        """
-        for step in range(saltsteps):
-            if self.nsalt == self.saltmax:
-                penalty = ['junk', self.zeta[self.nsalt - 1] - self.zeta[self.nsalt]]
-            elif self.nsalt == 0:
-                penalty = [self.zeta[self.nsalt + 1] - self.zeta[self.nsalt], 'junk']
-            else:
-                penalty = [self.zeta[self.nsalt + 1] - self.zeta[self.nsalt],
-                           self.zeta[self.nsalt - 1] - self.zeta[self.nsalt]]
-            self.swapper.attempt_identity_swap(self.context, penalty, self.saltmax)
-            self.update_state()
-
-    def adapt_zeta(self):
-        """
-        Update the free energy estimate for the current state based SAMS binary procedure (equation 9)
-
-        """
-
-        # Burn-in procedure as suggested in equation 15
-        if self.step <= self.burnin:
-            gain = min(self.pi[self.nsalt], self.step ** (-self.b))
-        else:
-            gain = min(self.pi[self.nsalt], 1.0 / (self.step - self.burnin + self.burnin ** self.b))
-
-        # Equations 4 and 9
-        zeta_half = np.array(self.zeta)  # allows operations to be performed on zeta_half that don't act on zeta
-        zeta_half[self.nsalt] = self.zeta[self.nsalt] + gain / (self.pi[self.nsalt])
-        self.zeta = zeta_half - zeta_half[0]
-
-        self.zetatime.append(self.zeta)
-
-    def calibration(self, niterations=None, mdsteps=None, saltsteps=None):
-        """
-        Parameters
-        ----------
-        niterations: int
-            The number total calibration steps, where a step consists of sampling configuration, sampling label, and
-            adapting zeta.
-        mdsteps: int
-            The number of molecular dynamics steps used to generate a new configuration
-        saltsteps: int
-            The number of salt-water exchanges used when updating the label.
-        """
-
-        if niterations == None: niterations = self.niterations
-        if mdsteps == None: mdsteps = self.mdsteps
-        if saltsteps == None: saltsteps = self.saltsteps
-
-        for i in range(niterations):
-            self.gen_config(mdsteps)
-            self.gen_samslabel(saltsteps)
-            self.adapt_zeta()
-            self.step += 1
