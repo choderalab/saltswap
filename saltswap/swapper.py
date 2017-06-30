@@ -772,6 +772,48 @@ class Swapper(object):
                                                             epsilon=self.an2wat_parampath[atm_index]['epsilon'][stage])
                 atm_index += 1
 
+    def update_fractional_ion(self, residue_index, initial_force, final_force, fraction=1.0):
+        """
+        Interpolate the forcefield parameters of a given residue between arbitrary initial and final non-bonded
+        parameters. To confirm the updated parameters, one must seperately call
+        self.forces_to_update.updateParametersInContext(context).
+
+        Example: Partially changing a water molecule to an anion
+        --------------------------------------------------------
+
+        Randomly select a water molecule:
+        > water_index = np.random.choice(a=np.where(self.stateVector == 0)[0], size=1)
+
+        Completely change this molecule's non-bonded parameters to an anion:
+        > self.update_fractional_ion(water_index, self.water_parameters, self.anion_parameters, fraction=0.5)
+
+        Push change to context:
+        > self.forces_to_update.updateParametersInContext(context)
+
+        Update the state vector to keep track of this change: 0 is for water, 1 is for cations, and 2 is for anions.
+        > self.stateVector[water_index] = 2
+
+        Parameters
+        ----------
+        residue_index: int
+            the index of the molecule that will be changed. The index corresponds to the list of residues contained in
+            self.mutable residues.
+        initial_force: dic
+            the initial non-bonded parameters, eg. self.water_parameters.
+        final_force: dic
+            the final non-bonded parameters, e.g. self.anion_parameters.
+        fraction: float
+            the fraction by which the non-bonded parameters will be interpolated between. Should be between 0 and 1.
+        """
+        molecule = [atom for atom in self.mutable_residues[residue_index].atoms()]
+        atm_index = 0
+        for atom in molecule:
+            charge = (1 - fraction) * initial_force[atm_index]["charge"] + fraction * final_force["charge"]
+            sigma = (1 - fraction) * initial_force[atm_index]["sigma"] + fraction * final_force["sigma"]
+            epsilon = (1 - fraction) * initial_force[atm_index]["epsilon"] + fraction * final_force["epsilon"]
+            self.forces_to_update.setParticleParameters(atom.index, charge=charge, sigma=sigma, epsilon=epsilon)
+            atm_index += 1
+
     def _get_potential_energy(self, context):
         """
         Extract the potential energy of the system
