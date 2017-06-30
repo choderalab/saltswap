@@ -778,14 +778,14 @@ class Swapper(object):
         parameters. To confirm the updated parameters, one must seperately call
         self.forces_to_update.updateParametersInContext(context).
 
-        Example: Partially changing a water molecule to an anion
-        --------------------------------------------------------
+        Example: Changing a water molecule to an anion
+        ----------------------------------------------
 
         Randomly select a water molecule:
         > water_index = np.random.choice(a=np.where(self.stateVector == 0)[0], size=1)
 
         Completely change this molecule's non-bonded parameters to an anion:
-        > self.update_fractional_ion(water_index, self.water_parameters, self.anion_parameters, fraction=0.5)
+        > self.update_fractional_ion(water_index, self.water_parameters, self.anion_parameters, fraction=1.0)
 
         Push change to context:
         > self.forces_to_update.updateParametersInContext(context)
