@@ -64,7 +64,7 @@ if __name__ == "__main__":
     parser.add_argument('-s','--steps', type=int,
                         help="the number of MD steps per iteration, default=2000", default=2000)
     parser.add_argument('--save_freq', type=int,
-                        help="the frequency with which to save the data", default=4)
+                        help="the frequency with which to save the data, default=1", default=1)
     parser.add_argument('--timestep', type=float,
                         help='the timestep of the integrators in femtoseconds, default=2.0', default=2.0)
     parser.add_argument('-e','--equilibration', type=int,
@@ -77,6 +77,8 @@ if __name__ == "__main__":
                         help="the number of propagation steps per perturbation kernels, default=10", default=10)
     parser.add_argument('--saltmax', type=int,
                         help="the maximum number of salt pairs that will be accepted, default=20", default=20)
+    parser.add_argument('--nsalt', type=int,
+                        help="the initial amount of salt the simulations will start with, default=0", default=0)
     parser.add_argument('--platform', type=str, choices=['CPU','CUDA','OpenCL'],
                         help="the platform where the simulation will be run, default=CPU", default='CPU')
     parser.add_argument('--save_configs', action='store_true',
@@ -155,6 +157,9 @@ if __name__ == "__main__":
                                             topology=wbox.topology, ncmc_integrator=ncmc_langevin,
                                             salt_concentration=0.1 * unit.molar, pressure=pressure,
                                             temperature=temperature, npert=npert, nprop=nprop, water_name='HOH')
+    # Add an initial amount of salt
+    sams_salinator.add_salt(args.nsalt)
+
     # Thermalize the system
     langevin.step(args.equilibration)
 
