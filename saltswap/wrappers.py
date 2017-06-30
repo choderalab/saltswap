@@ -341,9 +341,30 @@ class Salinator(object):
         # Push these new parameters to the context
         nonbonded_force.updateParametersInContext(self.context)
 
+    def add_salt(self, nsalt):
+        """
+        Add a specified amount of salt to the system.
+
+        Parameters
+        ----------
+        nsalt: int
+            the number of Na+ and Cl- pairs that will be added.
+        """
+        # Select which water molecules will be converted to anions anc cations
+        # TODO: Can I ensure salt isn't added inside the protein?
+        water_indices = np.random.choice(a=np.where(self.swapper.stateVector == 0)[0], size=2*nsalt, replace=False)
+        cation_indices = water_indices[0:nsalt]
+        anion_indices = water_indices[nsalt:]
+
+        # Insert the salt!
+        nonbonded_force = self._get_nonbonded_force()
+        for a_ind, c_ind in zip(cation_indices, anion_indices):
+            self._add_ion('cation', c_ind, nonbonded_force)
+            self._add_ion('anion', a_ind, nonbonded_force)
+
     def neutralize(self):
         """
-        Neutralize the system.
+        Neutralize the system by adding counter-ions which have the topology required by saltswap.
         """
         # Get the non-bonded force:
         nonbonded_force = self._get_nonbonded_force()
@@ -373,17 +394,8 @@ class Salinator(object):
         nwaters = np.sum(self.swapper.stateVector == 0)
         nsalt = int(np.floor(nwaters * self.salt_concentration / (water_conc * unit.molar)))
 
-        # Select which water molecules will be converted to anions anc cations
-        # TODO: Can I ensure salt isn't added inside the protein?
-        water_indices = np.random.choice(a=np.where(self.swapper.stateVector == 0)[0], size=2*nsalt, replace=False)
-        cation_indices = water_indices[0:nsalt]
-        anion_indices = water_indices[nsalt:]
-
-        # Insert the salt!
-        nonbonded_force = self._get_nonbonded_force()
-        for a_ind, c_ind in zip(cation_indices, anion_indices):
-            self._add_ion('cation', c_ind, nonbonded_force)
-            self._add_ion('anion', a_ind, nonbonded_force)
+        # Add the salt.
+        self.add_salt(nsalt)
 
     def update(self, nattempts=None, chemical_potential=None, saltmax=None):
         """
