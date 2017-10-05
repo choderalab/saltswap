@@ -1,6 +1,6 @@
 package:
-  name: saltswap-dev
-  version: 0.5
+  name: saltswap
+  version: 0.5.1
 
 source:
   path: ../../
