@@ -1,6 +1,6 @@
 package:
-  name: saltswap-dev
-  version: 0.5
+  name: saltswap
+  version: 0.5.1
 
 source:
   path: ../../
@@ -16,8 +16,8 @@ requirements:
     - numpy
     - scipy
     - setuptools
-    - openmm >= 7.1
-    - openmmtools >= 0.9.4
+    - openmm >=7.1
+    - openmmtools >=0.9.4
     - netcdf4
     - pytest
 
@@ -27,8 +27,8 @@ requirements:
     - numpy
     - scipy
     - setuptools
-    - openmm >= 7.1
-    - openmmtools >= 0.9.4
+    - openmm >=7.1
+    - openmmtools >=0.9.4
     - netcdf4
 
 test:
