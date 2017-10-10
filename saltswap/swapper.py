@@ -808,9 +808,9 @@ class Swapper(object):
         molecule = [atom for atom in self.mutable_residues[residue_index].atoms()]
         atm_index = 0
         for atom in molecule:
-            charge = (1 - fraction) * initial_force[atm_index]["charge"] + fraction * final_force["charge"]
-            sigma = (1 - fraction) * initial_force[atm_index]["sigma"] + fraction * final_force["sigma"]
-            epsilon = (1 - fraction) * initial_force[atm_index]["epsilon"] + fraction * final_force["epsilon"]
+            charge = (1 - fraction) * initial_force[atm_index]["charge"] + fraction * final_force[atm_index]["charge"]
+            sigma = (1 - fraction) * initial_force[atm_index]["sigma"] + fraction * final_force[atm_index]["sigma"]
+            epsilon = (1 - fraction) * initial_force[atm_index]["epsilon"] + fraction * final_force[atm_index]["epsilon"]
             self.forces_to_update.setParticleParameters(atom.index, charge=charge, sigma=sigma, epsilon=epsilon)
             atm_index += 1
 
