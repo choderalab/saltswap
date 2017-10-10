@@ -372,3 +372,21 @@ class TestWaterBoxSimulation(object):
                                             delta_chem=0, nprop=1, npert=5)
         sampler.multimove(nmoves=2, mdsteps=1, saltsteps=1)
 
+    def test_update_fractional_ion(self):
+        """
+        Test the functionality of the Swapper.update_fractional_ion method.
+        """
+        integrator,context,swapper = self._create_langevin_system()
+        #Randomly select a water molecule:
+        water_index = np.random.choice(a=np.where(swapper.stateVector == 0)[0], size=1)
+
+        #Completely change this molecule's non-bonded parameters to an anion:
+        swapper.update_fractional_ion(water_index, swapper.water_parameters, swapper.anion_parameters, fraction=1.0)
+
+        #Push change to context:
+        swapper.forces_to_update.updateParametersInContext(context)
+
+        # Update the state vector to keep track of this change: 0 is for water, 1 is for cations, and 2 is for anions.
+        swapper.stateVector[water_index] = 2
+
+
