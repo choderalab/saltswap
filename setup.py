@@ -4,7 +4,7 @@ setup(
     name='saltswap',
     author='Gregory A. Ross',
     author_email='gregory.ross@choderalab.org',
-    version='0.1dev',
+    version='0.5.2',
     url='https://github.com/choderalab/saltswap',
     packages=['saltswap', 'saltswap.tests'],
     license='MIT',
