@@ -378,7 +378,7 @@ class TestWaterBoxSimulation(object):
         """
         integrator,context,swapper = self._create_langevin_system()
         #Randomly select a water molecule:
-        water_index = np.random.choice(a=np.where(swapper.stateVector == 0)[0], size=1)
+        water_index = np.random.choice(a=np.where(swapper.stateVector == 0)[0], size=1)[0]
 
         #Completely change this molecule's non-bonded parameters to an anion:
         swapper.update_fractional_ion(water_index, swapper.water_parameters, swapper.anion_parameters, fraction=1.0)
