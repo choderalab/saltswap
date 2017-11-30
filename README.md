@@ -1,3 +1,4 @@
+[![DOI](https://zenodo.org/badge/79260659.svg)](https://zenodo.org/badge/latestdoi/79260659)
 [![experimental](http://badges.github.io/stability-badges/dist/experimental.svg)](http://github.com/badges/stability-badges)
 [![Build Status](https://travis-ci.org/choderalab/saltswap.svg?branch=master)](https://travis-ci.org/choderalab/saltswap/branches)
 
