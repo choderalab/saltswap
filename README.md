@@ -1,3 +1,4 @@
+[![DOI](https://zenodo.org/badge/79260659.svg)](https://zenodo.org/badge/latestdoi/79260659)
 [![experimental](http://badges.github.io/stability-badges/dist/experimental.svg)](http://github.com/badges/stability-badges)
 [![Build Status](https://travis-ci.org/choderalab/saltswap.svg?branch=master)](https://travis-ci.org/choderalab/saltswap/branches)
 
@@ -8,7 +9,19 @@
 `saltswap` uses the semi-grand canonical ensemble to couple a simulation box to a reservoir at a given macroscopic salt concentration.
 The applied chemical potential in `saltswap` reflects the salt concentration of the reservoir.
 
-*WARNING: This code is under development.*
+## Citations
+
+Please cite the following:
+[![DOI](https://zenodo.org/badge/doi/10.1101/226001.svg)](http://dx.doi.org/10.1101/226001)
+```
+@article{saltswap,
+    author = {Gregory A. Ross, Ari\"{e}n S. Rustenburg, Patrick B. Grinaway, Josh Fass, and John D. Chodera.},
+    title = {Biomolecular simulations under realistic macroscopic salt conditions},
+    journal = {bioRxiv},
+    doi = {10.1101/226001}
+    year = {2017},
+}
+```
 
 ## Installation
 
